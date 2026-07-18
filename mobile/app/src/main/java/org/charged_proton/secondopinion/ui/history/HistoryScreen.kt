@@ -1,0 +1,83 @@
+package org.charged_proton.secondopinion.ui.history
+
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Card
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.charged_proton.secondopinion.R
+import org.charged_proton.secondopinion.domain.model.CaseStatus
+import org.charged_proton.secondopinion.domain.model.SymptomCase
+import org.charged_proton.secondopinion.presentation.history.HistoryViewModel
+import org.koin.androidx.compose.koinViewModel
+import java.text.DateFormat
+import java.util.Date
+
+/** Case list, newest first; tap a case to open its assessment. */
+@Composable
+fun HistoryScreen(
+    onOpenCase: (caseId: String) -> Unit,
+    modifier: Modifier = Modifier,
+    viewModel: HistoryViewModel = koinViewModel(),
+) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+    if (uiState.cases.isEmpty()) {
+        Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(
+                text = stringResource(R.string.history_empty),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+        }
+        return
+    }
+
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        items(uiState.cases, key = SymptomCase::id) { case ->
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onOpenCase(case.id) },
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(
+                        text = DateFormat.getDateTimeInstance()
+                            .format(Date(case.createdAtEpochMillis)),
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                    Text(
+                        text = stringResource(case.status.toStringRes()),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun CaseStatus.toStringRes(): Int = when (this) {
+    CaseStatus.RECORDED -> R.string.case_status_recorded
+    CaseStatus.UPLOADING -> R.string.case_status_uploading
+    CaseStatus.PROCESSING -> R.string.case_status_processing
+    CaseStatus.COMPLETED -> R.string.case_status_completed
+    CaseStatus.FAILED -> R.string.case_status_failed
+}

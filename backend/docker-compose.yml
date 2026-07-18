@@ -1,0 +1,99 @@
+name: second-opinion
+
+x-app-env: &app-env
+  SO_DATABASE_URL: postgresql+asyncpg://second_opinion:second_opinion@db:5432/second_opinion
+  SO_REDIS_URL: redis://redis:6379/0
+  SO_S3_ENDPOINT_URL: http://minio:9000
+  SO_S3_ACCESS_KEY: minioadmin
+  SO_S3_SECRET_KEY: minioadmin
+  SO_S3_BUCKET: recordings
+  # Speech stage defaults to the fake provider; export both on the host
+  # (or use an .env file) to hit the real Sarvam Batch API.
+  SO_SPEECH_PROVIDER: ${SO_SPEECH_PROVIDER:-fake}
+  SO_SARVAM_API_KEY: ${SO_SARVAM_API_KEY:-}
+
+services:
+  api:
+    build: .
+    command: >
+      sh -c "uv run --no-dev alembic upgrade head &&
+             uv run --no-dev uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    environment: *app-env
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  worker:
+    build: .
+    command: uv run --no-dev celery -A worker.main worker --loglevel=info
+    environment: *app-env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: second_opinion
+      POSTGRES_PASSWORD: second_opinion
+      POSTGRES_DB: second_opinion
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U second_opinion"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      # host 9000 is commonly taken; container-internal traffic still uses 9000
+      - "9100:9000"
+      - "9101:9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      sh -c "mc alias set local http://minio:9000 minioadmin minioadmin &&
+             mc mb --ignore-existing local/recordings"
+
+volumes:
+  pgdata:
+  miniodata:

@@ -1,0 +1,24 @@
+# Gradle
+.gradle/
+build/
+
+# Local configuration (SDK path, signing config, etc.)
+local.properties
+
+# IDE
+.idea/
+*.iml
+captures/
+.navigation/
+
+# Kotlin / native build
+.kotlin/
+.cxx/
+.externalNativeBuild/
+
+# Logs & profiling
+*.log
+*.hprof
+
+# macOS
+.DS_Store

@@ -1,0 +1,371 @@
+# Second Opinion — Android App Documentation
+
+> **Purpose:** Everything a developer or coding agent needs to understand, navigate, and extend
+> the Android app: architecture, module layout, data flow, conventions, and migration plan.
+> For product context (problem, solution, decisions D1–D6, roadmap) see
+> `docs/PROJECT_DOCUMENTATION.md`.
+
+**Last updated:** 2026-07-18
+**Status:** KMM layer-per-module; full case → assessment → decision flow on a **mock data layer**
+(in-memory repositories simulate the backend pipeline until Phase 2 lands); on-device VAD
+silence trimming (Silero via sherpa-onnx) implemented in the recording pipeline
+
+---
+
+## 1. Architectural Direction (agreed)
+
+- **KMM (Kotlin Multiplatform)**: business logic, domain models, networking, and persistence
+  live in shared multiplatform modules. Android is the first platform; iOS is a future target.
+- **Layer-per-module**: domain, data, and presentation are **separate Gradle modules**
+  (`:shared:domain`, `:shared:data`, `:shared:presentation`) so layer boundaries are enforced
+  by the build system, not just by convention.
+- **Jetpack Compose + Material3** for all UI (dynamic color supported). No XML layouts.
+- **MVVM with Unidirectional Data Flow (UDF)**: UI observes a single immutable `UiState` from a
+  ViewModel; user actions flow up as events, state flows down.
+- Platform-specific capabilities (audio recording, permissions) are exposed to shared code via
+  `expect`/`actual` declarations or interfaces implemented per platform.
+
+## 2. Tech Stack
+
+| Concern | Choice | Notes |
+|---|---|---|
+| Language | Kotlin 2.2.x | |
+| UI | Jetpack Compose + Material3 (BOM 2026.02.01) | Dynamic color on Android 12+ |
+| Architecture | MVVM + UDF | `StateFlow<UiState>` per screen |
+| Shared logic | Kotlin Multiplatform (`:shared:domain`, `:shared:data`, `:shared:presentation`) | Each with commonMain / androidMain (iosMain later) |
+| Async | Kotlin Coroutines + Flow | Structured concurrency; no callbacks |
+| Networking | Ktor Client | Multiplatform; OkHttp engine on Android |
+| Serialization | kotlinx.serialization | JSON payloads to backend |
+| DI | Koin | Multiplatform-friendly, low ceremony |
+| Local storage | SQLDelight | Multiplatform DB for recordings/metadata queue |
+| Audio capture | `AudioRecord` + Silero VAD (sherpa-onnx) + `MediaCodec` | 16 kHz mono PCM → silence trim → AAC/M4A |
+| Min/target SDK | 29 / 37 | Android 10+ |
+| Build | Gradle (Kotlin DSL) + version catalog (`gradle/libs.versions.toml`) | |
+
+> Ktor, kotlinx.serialization, Koin, and SQLDelight are **planned** — add them via the version
+> catalog when the corresponding feature is implemented, not before.
+
+### 2.1 Standard Library Selections (KMP-verified)
+
+Selection criteria: works in `commonMain` (true multiplatform), actively maintained on GitHub,
+strong community adoption. Verified as of 2026-07.
+
+| Category | Selected | KMP status | Maintenance & community | Alternatives considered |
+|---|---|---|---|---|
+| Coroutines / async | **kotlinx.coroutines** | Native KMP | JetBrains official, ~13k★, very active | None — de-facto standard |
+| ViewModel + Lifecycle | **androidx.lifecycle `lifecycle-viewmodel`** (2.9+) | Stable KMP since 2.9 (May 2025); `ViewModel` + `viewModelScope` usable directly in `commonMain` | Google/AndroidX, official | moko-mvvm (obsolete now that AndroidX is KMP) |
+| DI | **Koin** (4.x) | Native KMP + Compose Multiplatform support | ~10k★, commits within days, backed by Kotzilla | kotlin-inject (~1.5k★, slower cadence), Metro (~1.1k★, promising but young), Hilt (Android-only — not KMP) |
+| Database | **SQLDelight** | KMP-first since inception | CashApp/Square, ~6.5k★, active | Room 2.7+/3.0 (now stable KMP, Google-backed) — valid choice, but SQLDelight preferred for greenfield KMP; revisit if team prefers DAO/annotation style |
+| Networking | **Ktor Client** | Native KMP | JetBrains official, ~13k★, very active | OkHttp/Retrofit (Android-only — used only as Ktor's Android engine) |
+| Serialization | **kotlinx.serialization** | Native KMP | JetBrains official, ~5.5k★, active | Moshi/Gson (JVM-only) |
+| Date/time | **kotlinx-datetime** | Native KMP | JetBrains official, active | java.time (JVM-only) |
+| Key-value prefs | **androidx DataStore** (1.1+) | KMP support | Google/AndroidX, official | multiplatform-settings (~1.2k★) — fine, but DataStore aligns with AndroidX KMP direction |
+| Navigation | **androidx Navigation Compose** | KMP artifacts available via JetBrains; we use it Android-side only for now | Google/AndroidX, official | Voyager / Decompose (~2–3k★ each; reconsider only if shared iOS navigation becomes a requirement) |
+
+Notes:
+- Prefer AndroidX artifacts wherever they have stable KMP support (ViewModel, Lifecycle,
+  DataStore) — largest community, longest support horizon, and smooth Android interop.
+- `@HiltViewModel` and other Hilt features do not work in `commonMain`; ViewModel creation is
+  wired through Koin.
+- All versions go through `gradle/libs.versions.toml`; the table intentionally omits exact
+  versions to avoid drift.
+
+## 3. Module Structure
+
+The repository root contains `mobile/` (this Android/KMM project), `backend/` (backend
+services — see `docs/BACKEND.md`), and `docs/`. All paths below are relative to `mobile/`.
+
+### 3.1 Current (KMM, layer-per-module)
+
+The KMM migration (steps 1–3 of §10) is done. The entry module is still named `:app`
+(rename to `:androidApp` is deferred — §10 step 5). Shared modules use the
+`com.android.kotlin.multiplatform.library` plugin with an Android-only target for now.
+
+```
+mobile/
+├── app/                                # :app — Android entry point
+│   └── src/main/java/org/charged_proton/secondopinion/
+│       ├── SecondOpinionApp.kt         # Application — starts Koin
+│       ├── MainActivity.kt             # Sets Compose content, hosts AppNavHost
+│       ├── di/AppModule.kt             # Koin module: recorder, repos, use cases, ViewModels
+│       └── ui/
+│           ├── navigation/AppNavHost.kt        # record / history / assessment/{caseId}
+│           ├── record/RecordScreen.kt          # Speak/Stop, permission, → assessment/history
+│           ├── assessment/AssessmentScreen.kt  # progress → result → pharmacist decision
+│           ├── history/HistoryScreen.kt        # case list, tap → assessment
+│           └── theme/                  # Material3 theme (Color, Theme, Type)
+└── shared/
+    ├── domain/                         # :shared:domain — pure Kotlin commonMain
+    │   └── .../domain/
+    │       ├── model/                  # Recording, SymptomCase, Assessment,
+    │       │                           #   AssessmentProgress, Feedback
+    │       ├── platform/AudioRecorder.kt        # port interface
+    │       ├── repository/             # CaseRepository, AssessmentRepository (ports)
+    │       └── usecase/                # recording + case + assessment + feedback use cases
+    ├── data/                           # :shared:data — implements domain ports
+    │   ├── src/androidMain/.../data/
+    │   │   ├── audio/                  # SileroVadTrimmer (sherpa-onnx), AacM4aEncoder
+    │   │   └── recorder/VadTrimmingAudioRecorder.kt
+    │   └── src/commonMain/.../data/
+    │       ├── mock/MockAssessmentScenarios.kt  # canned assessments incl. red-flag case
+    │       └── repository/             # InMemoryCaseRepository, MockAssessmentRepository
+    └── presentation/                   # :shared:presentation — commonMain ViewModels
+        └── .../presentation/
+            ├── symptom/                # SymptomViewModel + SymptomUiState (creates case on stop)
+            ├── assessment/             # AssessmentViewModel + AssessmentUiState
+            └── history/HistoryViewModel.kt      # streams case list
+```
+
+### 3.2 Target (full)
+
+```
+androidApp/                             # :androidApp — Android entry point, thin
+└── src/main/.../
+    ├── MainActivity.kt                 # Sets Compose content, hosts navigation
+    ├── ui/                             # Compose screens, components, theme
+    │   ├── symptom/                    # SymptomScreen (binds to SymptomViewModel)
+    │   ├── assessment/                 # Assessment result screen (Phase 3)
+    │   └── theme/
+    └── di/                             # Koin app definition — wires all modules together
+
+shared/
+├── domain/                             # :shared:domain — pure Kotlin KMP, zero dependencies
+│   └── src/commonMain/kotlin/.../domain/
+│       ├── model/                      # Recording, SymptomReport, Assessment, RedFlag
+│       ├── repository/                 # Repository *interfaces* (ports)
+│       ├── platform/                   # Platform *interfaces* (ports): AudioRecorder, FileStore
+│       └── usecase/                    # RecordSymptomsUseCase, UploadRecordingUseCase, ...
+│
+├── data/                               # :shared:data — implements domain ports
+│   └── src/
+│       ├── commonMain/kotlin/.../data/
+│       │   ├── repository/             # RecordingRepositoryImpl, AssessmentRepositoryImpl
+│       │   ├── remote/                 # Ktor API client, DTOs, mappers
+│       │   └── local/                  # SQLDelight queries (recording queue, results cache)
+│       ├── androidMain/kotlin/.../data/
+│       │   └── platform/               # VadTrimmingAudioRecorder, AndroidFileStore
+│       └── iosMain/                    # future
+│
+└── presentation/                       # :shared:presentation — ViewModels, UiState/UiEvent
+    └── src/commonMain/kotlin/.../presentation/
+        ├── symptom/                    # SymptomViewModel, SymptomUiState, SymptomUiEvent
+        └── assessment/                 # AssessmentViewModel, ... (Phase 3)
+```
+
+**Rule of thumb:** if code doesn't need an Android API, it belongs in a `shared` module's
+`commonMain`. UI (Compose) and OS integrations (permissions, AudioRecord/MediaCodec) stay in
+`androidApp` / `androidMain` source sets.
+
+## 4. Layered Architecture & Module Dependency Graph
+
+```
+┌─ :androidApp ───────────────────────────────────────────────┐
+│  Compose UI (screens, components) + Koin wiring              │
+│    ↓ observes StateFlow<UiState>      ↑ sends UiEvent        │
+├─ :shared:presentation ──────────────────────────────────────┤
+│  ViewModel: reduces events → state; calls use cases          │
+├─ :shared:domain ────────────────────────────────────────────┤
+│  Use cases + pure models + ports (repository/platform ifaces)│
+├─ :shared:data ──────────────────────────────────────────────┤
+│  Port implementations: remote (Ktor), local (SQLDelight),    │
+│  platform (AudioRecord + VAD in androidMain)                 │
+└──────────────────────────────────────────────────────────────┘
+```
+
+Allowed module dependencies (enforced by Gradle — a module cannot import what it does not
+declare):
+
+| Module | Depends on |
+|---|---|
+| `:shared:domain` | nothing (pure Kotlin + coroutines only) |
+| `:shared:data` | `:shared:domain` |
+| `:shared:presentation` | `:shared:domain` |
+| `:androidApp` | `:shared:presentation`, `:shared:domain`, `:shared:data` (DI wiring only) |
+
+Key rules:
+- Domain owns all interfaces (repositories, platform ports); data implements them. Domain never
+  sees implementations — this is dependency inversion, enforced at the module level.
+- `:shared:presentation` and `:shared:data` never depend on each other; they meet only through
+  domain interfaces, bound together by Koin in `:androidApp`.
+- `:androidApp` references `:shared:data` **only** to register implementations in DI — never
+  call data classes directly from UI.
+
+## 5. Core Data Flows
+
+### 5.1 Symptom recording flow (implemented today, target shape)
+
+```
+Pharmacist taps "Speak"
+  → UI checks RECORD_AUDIO permission (Android runtime permission, androidApp)
+      ├─ not granted → system permission dialog → denied → status message
+      └─ granted ↓
+  → SymptomViewModel.onEvent(StartRecording)
+  → RecordSymptomsUseCase → AudioRecorder.start()   (actual: AudioRecord, 16 kHz mono PCM)
+  → UiState(isRecording = true)
+Pharmacist taps "Stop"
+  → suspend AudioRecorder.stop()                    (VAD silence trim → AAC encode → .m4a in cache)
+  → Recording(file, durationMs, createdAt)
+  → RecordingRepository.save(recording)             (SQLDelight metadata + file reference)
+  → UiState(isRecording = false, lastRecording = ...)
+```
+
+### 5.2 Case & assessment flow (implemented against mock repositories)
+
+```
+Recording saved (Stop)
+  → CreateCaseUseCase → CaseRepository.createCase → SymptomCase(RECORDED)
+  → UiState.lastCaseId set → "Get assessment" button → navigate assessment/{caseId}
+AssessmentViewModel(caseId) init
+  → RequestAssessmentUseCase → AssessmentRepository.requestAssessment(caseId): Flow
+      ├─ InProgress(UPLOADING → DIARIZING → TRANSCRIBING → EXTRACTING → ASSESSING)
+      │    (mock: staged delays; case status mirrors UPLOADING/PROCESSING/COMPLETED)
+      └─ Completed(Assessment(summary, conditions, redFlags, otcGuidance, disclaimer))
+  → Assessment screen renders result (red flags first, error container styling)
+  → Pharmacist accepts / overrides → SubmitFeedbackUseCase → decision recorded
+HistoryScreen
+  → ObserveCasesUseCase → case list (newest first) → tap → assessment/{caseId}
+      (already-assessed case: Flow emits Completed immediately, decision preloaded)
+```
+
+When Phase 2 lands, `MockAssessmentRepository` is replaced by a Ktor-backed implementation
+(multipart upload + poll) and `InMemoryCaseRepository` by SQLDelight — the domain ports,
+use cases, ViewModels, and screens stay unchanged.
+
+### 5.3 UiState contract (per screen)
+
+Each screen owns exactly one `UiState` data class and one `UiEvent` sealed interface. Example:
+
+```kotlin
+data class SymptomUiState(
+    val isRecording: Boolean = false,
+    val statusMessage: StringResourceKey = StringResourceKey.PromptDescribeSymptoms,
+    val lastRecording: Recording? = null,
+)
+
+sealed interface SymptomUiEvent {
+    data object StartRecording : SymptomUiEvent
+    data object StopRecording : SymptomUiEvent
+    data object PermissionDenied : SymptomUiEvent
+}
+```
+
+## 6. Permissions
+
+| Permission | Declared | Handling |
+|---|---|---|
+| `RECORD_AUDIO` | `AndroidManifest.xml` | Dangerous permission — requested at runtime via `rememberLauncherForActivityResult(RequestPermission())` before first recording |
+| `INTERNET` | Needed for Phase 2 upload | Add to manifest when upload is implemented |
+
+Permission checks are UI-layer (Android) concerns; shared code never asks for permissions — it
+receives a ready-to-use `AudioRecorder` or a failure.
+
+## 7. Current Implementation Inventory
+
+| File | Responsibility |
+|---|---|
+| `mobile/app/.../SecondOpinionApp.kt` | `Application`; starts Koin with `appModule` |
+| `mobile/app/.../di/AppModule.kt` | Koin bindings: recorder port, mock repositories (singletons), use-case factories, three ViewModels (`AssessmentViewModel` takes `caseId` via `parametersOf`) |
+| `mobile/app/.../MainActivity.kt` | Sets Compose content; hosts `AppNavHost` inside `Scaffold` |
+| `mobile/app/.../ui/navigation/AppNavHost.kt` | Navigation Compose graph: `record` (start), `history`, `assessment/{caseId}` |
+| `mobile/app/.../ui/record/RecordScreen.kt` | Speak/Stop, `RECORD_AUDIO` permission, "Get assessment" (when case created), "View history" |
+| `mobile/app/.../ui/assessment/AssessmentScreen.kt` | Pipeline progress spinner, assessment result (red flags → conditions → OTC → disclaimer), accept/override decision bar |
+| `mobile/app/.../ui/history/HistoryScreen.kt` | Case list (timestamp + status), tap → assessment; empty state |
+| `mobile/app/.../ui/theme/*` | Material3 theme, dynamic color (Android 12+), dark/light |
+| `mobile/app/src/main/res/values/strings.xml` | UI strings (record/assessment/history/decision/case-status) |
+| `mobile/app/src/main/AndroidManifest.xml` | `RECORD_AUDIO`, Application class, single launcher activity |
+| `mobile/shared/domain/.../model/*` | `Recording`, `SymptomCase` + `CaseStatus`, `Assessment` (+`ConditionHypothesis`, `RedFlag`, `OtcAdvice`), `AssessmentProgress` + `PipelineStage`, `Feedback` + `PharmacistDecision` |
+| `mobile/shared/domain/.../platform/AudioRecorder.kt` | Port interface: `start()`, `suspend stop(): Recording?` (post-processing happens in stop), `release()`, `isRecording` |
+| `mobile/shared/domain/.../repository/*` | Ports: `CaseRepository` (observe/create/get/updateStatus), `AssessmentRepository` (requestAssessment `Flow`, getAssessment, submit/getFeedback) |
+| `mobile/shared/domain/.../usecase/*` | Recording (Start/Stop/Release), case (Create/Observe/Get), assessment (Request/Get), feedback (Submit/Get) use cases |
+| `mobile/shared/data/.../recorder/VadTrimmingAudioRecorder.kt` | `AudioRecord` impl of the port (androidMain): captures 16 kHz mono PCM on a thread; `stop()` trims silence via VAD and writes `symptom_recording_<ts>.m4a` to `cacheDir` (falls back to the full buffer when no speech detected) |
+| `mobile/shared/data/.../audio/SileroVadTrimmer.kt` | Silero VAD via sherpa-onnx: finds the padded speech range; model `silero_vad.onnx` loaded from app assets |
+| `mobile/shared/data/.../audio/AacM4aEncoder.kt` | Mono 16-bit PCM → AAC-LC/.m4a via `MediaCodec` + `MediaMuxer` |
+| `mobile/shared/data/.../repository/InMemoryCaseRepository.kt` | Mock: `StateFlow`-backed case store (newest first) |
+| `mobile/shared/data/.../repository/MockAssessmentRepository.kt` | Mock: simulates pipeline with staged delays, rotates canned scenarios, in-memory feedback store |
+| `mobile/shared/data/.../mock/MockAssessmentScenarios.kt` | Three canned assessments: viral URI, gastroenteritis, red-flag chest pain (no OTC, urgent referral) |
+| `mobile/shared/presentation/.../symptom/*` | `SymptomViewModel` (creates case on stop → `lastCaseId`), `SymptomUiState` + `SymptomStatus` |
+| `mobile/shared/presentation/.../assessment/*` | `AssessmentViewModel` (streams progress, loads prior decision, submits feedback), `AssessmentUiState` |
+| `mobile/shared/presentation/.../history/HistoryViewModel.kt` | `stateIn`-shared case list (`HistoryUiState`) |
+
+Known gaps (intentional — mock data layer): no networking (Ktor), no persistence (SQLDelight —
+cases vanish on process death), no auth (decision D6).
+
+## 8. Conventions for Developers & Coding Agents
+
+1. **Package root:** `org.charged_proton.secondopinion`.
+2. **Dependencies:** always add via `gradle/libs.versions.toml` version catalog; never hardcode
+   versions in build files.
+3. **UI:** Compose + Material3 only. Use `MaterialTheme.colorScheme` / `typography` — never
+   hardcode colors or text styles. All user-facing text goes in `strings.xml`.
+4. **State:** composables are stateless where possible; hoist state. One `UiState` per screen,
+   exposed as `StateFlow`. No `LiveData`, no RxJava.
+5. **Async:** coroutines + Flow only. Use cases are `suspend` functions or return `Flow`.
+6. **Layering:** respect the module dependency graph (§4). Domain never imports Android APIs;
+   presentation and data never depend on each other; new inter-module dependencies require a
+   deliberate decision, not a convenience import.
+7. **Audio artifacts:** recordings are `.m4a` (AAC) in app cache; never store audio in external
+   storage; treat recordings as sensitive health data (see D-privacy notes in project doc §9).
+8. **Errors:** repositories return `Result<T>` (or sealed results); ViewModels map failures to
+   user-readable status messages — never crash on recorder/network failure.
+9. **Previews:** provide `@Preview` composables for new screens using `SecondOpinionTheme`.
+
+## 9. Build, Run, Test
+
+All Gradle commands run from the `mobile/` directory:
+
+```bash
+cd mobile
+./gradlew :app:compileDebugKotlin     # compile check
+./gradlew :app:installDebug           # build + install on connected device/emulator
+./gradlew check                       # all unit tests (shared modules run as host tests)
+./gradlew :shared:domain:testAndroidHostTest  # single shared module's tests
+./gradlew :app:connectedDebugAndroidTest  # instrumented + Compose UI tests (device required)
+```
+
+- SDK location: `mobile/local.properties` (`sdk.dir`). Known AVD: `Pixel_10_Pro`.
+- Launch after install:
+  `adb shell monkey -p org.charged_proton.secondopinion -c android.intent.category.LAUNCHER 1`
+
+**Testing strategy (implemented):** each shared module owns its tests in `commonTest`
+(48 tests total, run on the JVM via the AGP-KMP `withHostTest {}` DSL):
+- `:shared:domain` `commonTest` — all 10 use cases against hand-written fakes of the three
+  ports (`testutil/Fakes.kt`); verifies `Result` wrapping and delegation (15 tests)
+- `:shared:data` `commonTest` — `InMemoryCaseRepository` (Turbine on `observeCases`) and
+  `MockAssessmentRepository` (full stage sequence, status transitions, cached replay,
+  scenario rotation, feedback round-trip) (12 tests)
+- `:shared:presentation` `commonTest` — the three ViewModels with fakes,
+  `Dispatchers.setMain(UnconfinedTestDispatcher())`, and Turbine for `StateFlow`
+  transitions; a `MutableSharedFlow`-driven fake steps the assessment pipeline; includes
+  a gated-suspend fake proving double-stop re-entry is ignored (21 tests)
+- `:app` `androidTest` — Compose UI tests (`ui-test-junit4`) for the critical
+  record-screen flows: Speak/Stop toggle, saved-case → "Get assessment" navigation,
+  permission-denied messaging, history navigation (6 tests, device/emulator required).
+  `RecordScreen` gets a `SymptomViewModel` built on androidTest fakes — no microphone
+  or Koin graph involved; `RECORD_AUDIO` granted via `UiAutomation` in `@Before`
+- Convention: hand-written fakes over mocking libraries (pure Kotlin, KMP-compatible);
+  no mocking framework is in the catalog
+
+## 10. Migration Plan: single module → KMM (layer-per-module)
+
+Incremental — the app must stay buildable/runnable at every step:
+
+1. ✅ **Create `:shared:domain`** — `Recording` model, `AudioRecorder` port, recording use cases.
+2. ✅ **Create `:shared:data`** — `MediaRecorderAudioRecorder` (androidMain) behind the port.
+3. ✅ **Create `:shared:presentation`** — `SymptomViewModel` + `SymptomUiState`; Koin wired in
+   `:app` (`SecondOpinionApp` + `di/AppModule.kt`).
+4. **Fill the data layer** when Phase 2 starts: Ktor client + upload repository + SQLDelight
+   queue inside `:shared:data`.
+5. **Rename `app` → `androidApp`** (optional, cosmetic) once the shared modules are established.
+
+Do not do steps 4–5 before backend work begins — keep the codebase minimal (see project doc §8
+roadmap phases).
+
+Gradle note: shared modules apply `org.jetbrains.kotlin.multiplatform` and
+`com.android.kotlin.multiplatform.library` *without versions* — AGP 9 already puts both on the
+build classpath via the root `com.android.application` plugin, and re-requesting a version fails.
+
+## 11. Related Documents
+
+- `docs/PROJECT_DOCUMENTATION.md` — product context, decisions D1–D6, system architecture, roadmap
+- `docs/BACKEND.md` — backend architecture, API surface the app talks to (§3)
+- `docs/ideation.txt` — original rough sketch

@@ -1,0 +1,29 @@
+<resources>
+    <string name="app_name">Second Opinion</string>
+    <string name="speak">Speak</string>
+    <string name="stop">Stop</string>
+    <string name="prompt_describe_symptoms">Press Speak and describe your symptoms</string>
+    <string name="status_recording">Recording… describe your symptoms</string>
+    <string name="status_saved">Recording saved. Press Speak to record again.</string>
+    <string name="status_permission_required">Microphone permission is required to record symptoms</string>
+    <string name="status_error">Something went wrong. Please try again.</string>
+
+    <string name="get_assessment">Get assessment</string>
+    <string name="view_history">View history</string>
+    <string name="history_empty">No cases yet. Record symptoms to create one.</string>
+
+    <string name="assessment_in_progress">Analyzing… %1$s</string>
+    <string name="section_summary">Symptom summary</string>
+    <string name="section_red_flags">Red flags</string>
+    <string name="section_conditions">Possible conditions</string>
+    <string name="section_otc">OTC guidance</string>
+    <string name="decision_accept">Accept advice</string>
+    <string name="decision_override">Different action</string>
+    <string name="decision_recorded">Decision recorded: %1$s</string>
+
+    <string name="case_status_recorded">Recorded — not yet assessed</string>
+    <string name="case_status_uploading">Uploading…</string>
+    <string name="case_status_processing">Processing…</string>
+    <string name="case_status_completed">Assessment ready</string>
+    <string name="case_status_failed">Assessment failed</string>
+</resources>
