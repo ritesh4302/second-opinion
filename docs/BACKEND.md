@@ -5,8 +5,8 @@
 > `docs/PROJECT_DOCUMENTATION.md`; for the Android client see `docs/ANDROID_APP.md`.
 
 **Last updated:** 2026-07-18
-**Status:** Steps 1–3 implemented (skeleton + endpoints + speech worker via Sarvam Batch API
-with native diarization); NLP/assessment stages (steps 4–5) are stubs
+**Status:** Steps 1–4 implemented (skeleton + endpoints + speech worker via Sarvam Batch API
+with native diarization + NLP worker via sarvam-m); assessment stage (step 5) is a stub
 
 ---
 
@@ -231,7 +231,9 @@ users).
 3. ~~Speech worker: pyannote + Sarvam integration~~ ✅ — Sarvam Saaras v3 Batch API bundles
    diarization with ASR (answers Q2), so single-vendor for the POC; pyannote deferred until
    real-audio quality says otherwise. ASR benchmarking still pending (needs keys + real audio)
-4. NLP worker: relevance filter + extraction with structured output
+4. ~~NLP worker: relevance filter + extraction with structured output~~ ✅ — two focused
+   sarvam-m calls (relevance weighting, then extraction from kept segments), prompted JSON +
+   Pydantic validation; raw LLM replies stored in `extractions.raw_llm_output` for audit
 5. Assessment stage (blocked on medical model choice — open question Q3)
 6. ~~Feedback endpoint + polling status endpoint~~ ✅ (feedback + status + assessment retrieval)
 7. Observability baseline (structured logs + queue/stage metrics)
@@ -251,19 +253,22 @@ Layout: `backend/` — uv project, Python 3.12, single package `app/` + `worker/
 | `backend/app/storage.py` | `ObjectStorage` port + boto3 S3/MinIO impl (offloaded via `asyncio.to_thread`) |
 | `backend/app/queue.py` | Celery factory + `enqueue` dependency; API enqueues by task name, never imports worker code |
 | `backend/app/routers/` | `health` (healthz/readyz), `recordings` (upload/status/assessment), `assessments` (feedback) |
-| `backend/worker/main.py` | Celery worker entrypoint; `pipeline.process_recording` (speech stage) + `pipeline.process_transcript` stub (step 4) |
+| `backend/worker/main.py` | Celery worker entrypoint; speech + NLP stage tasks, assessment stub (step 5) |
 | `backend/worker/transcription.py` | `Transcriber` port; `SarvamTranscriber` (Batch API, `with_diarization=True`) + `FakeTranscriber` (dev/demo, `SO_SPEECH_PROVIDER=fake`) |
-| `backend/worker/pipeline.py` | `run_speech_stage`: S3 download → transcribe → replace-on-retry segment persistence → status transitions (`transcribing` → `filtering` / `failed`) |
+| `backend/worker/nlp.py` | `NlpModel` port; `SarvamNlp` (sarvam-m chat, prompted-JSON + Pydantic validation) + `FakeNlp` (`SO_NLP_PROVIDER=fake`); relevance + extraction prompts |
+| `backend/worker/pipeline.py` | `run_speech_stage` (S3 download → transcribe → segments, `transcribing` → `filtering`) + `run_nlp_stage` (relevance weights/discard flags → `extracting` → Extraction row → `assessing`); replace-on-retry persistence, failures set `failed` + stage |
 | `backend/worker/db.py` | Sync SQLAlchemy session for Celery tasks (psycopg driver on the same DB) |
 | `backend/alembic/` | Async migrations; URL from settings; initial schema revision applied |
-| `backend/tests/` | 18 pytest tests: API (fakes for storage/queue, httpx `ASGITransport`) + speech-stage worker tests (sync SQLite, stub transcriber, Sarvam output parser) |
+| `backend/tests/` | 27 pytest tests: API (fakes for storage/queue, httpx `ASGITransport`) + speech/NLP worker stage tests (sync SQLite, stub transcriber/NLP, Sarvam + LLM-JSON parsers) |
 | `backend/docker-compose.yml` | api + worker + Postgres 16 + Redis 7 + MinIO (host ports 9100/9101) + bucket init; api runs `alembic upgrade head` on start |
 | `.github/workflows/backend.yml` | CI: ruff check/format + pytest + Docker image build |
 
-Verified end-to-end on the compose stack: upload → 202 + MinIO object + `queued` row →
-speech stage (fake provider) → diarized segments in `transcripts` → status `filtering` →
-NLP stub task received; idempotent re-upload returns 200. Real Sarvam calls need
-`SO_SPEECH_PROVIDER=sarvam` + `SO_SARVAM_API_KEY` (compose defaults to `fake`).
+Verified end-to-end on the compose stack (fake providers): upload → 202 + MinIO object →
+speech stage → diarized segments → NLP stage → relevance weights + discard flags on
+`transcripts`, `extractions` row (symptoms/duration/severity + raw LLM audit payload) →
+status `assessing` → assessment stub task received; idempotent re-upload returns 200.
+Real Sarvam calls need `SO_SPEECH_PROVIDER=sarvam` / `SO_NLP_PROVIDER=sarvam` +
+`SO_SARVAM_API_KEY` (compose defaults to `fake`).
 
 ## 12. Related Documents
 

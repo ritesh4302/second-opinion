@@ -1,4 +1,4 @@
-"""Speech stage tests: sync session + fakes (no Celery, S3, or Sarvam)."""
+"""Speech + NLP stage tests: sync session + fakes (no Celery, S3, or Sarvam)."""
 
 import uuid
 
@@ -8,8 +8,15 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.db import Base
-from app.models import Recording, RecordingStatus, TranscriptSegment
-from worker.pipeline import run_speech_stage
+from app.models import Extraction, Recording, RecordingStatus, TranscriptSegment
+from worker.nlp import (
+    ExtractionResult,
+    NlpError,
+    RelevanceResult,
+    SegmentRelevance,
+    parse_llm_json,
+)
+from worker.pipeline import run_nlp_stage, run_speech_stage
 from worker.transcription import Segment, parse_sarvam_output
 
 SEGMENTS = [
@@ -170,3 +177,202 @@ def test_parse_sarvam_output_falls_back_to_flat_transcript():
     assert parse_sarvam_output({"transcript": "sirf ek awaaz"}) == [
         Segment("unknown", "sirf ek awaaz", 0, 0)
     ]
+
+
+RELEVANCE = RelevanceResult(
+    patient_speaker="0",
+    segments=[SegmentRelevance(index=0, relevance=0.9), SegmentRelevance(index=1, relevance=0.2)],
+)
+EXTRACTION = ExtractionResult(symptoms=["fever"], duration_days=2, severity="mild")
+
+
+class StubNlp:
+    def __init__(
+        self,
+        relevance: RelevanceResult = RELEVANCE,
+        extraction: ExtractionResult = EXTRACTION,
+        filter_error: Exception | None = None,
+        extract_error: Exception | None = None,
+    ):
+        self.relevance = relevance
+        self.extraction = extraction
+        self.filter_error = filter_error
+        self.extract_error = extract_error
+        self.extract_calls: list[str] = []
+
+    def weigh_relevance(self, lines):
+        if self.filter_error:
+            raise self.filter_error
+        return self.relevance
+
+    def extract(self, text: str) -> ExtractionResult:
+        self.extract_calls.append(text)
+        if self.extract_error:
+            raise self.extract_error
+        return self.extraction
+
+
+def make_filtering_recording(session: Session) -> Recording:
+    recording = Recording(
+        id=uuid.uuid4(),
+        audio_key="recordings/test.m4a",
+        duration_ms=4000,
+        locale="hi-IN",
+        status=RecordingStatus.FILTERING,
+    )
+    session.add(recording)
+    session.add_all(
+        [
+            TranscriptSegment(
+                recording_id=recording.id,
+                speaker_label="0",
+                segment_index=0,
+                text="मुझे बुखार है।",
+                start_ms=0,
+                end_ms=1500,
+            ),
+            TranscriptSegment(
+                recording_id=recording.id,
+                speaker_label="1",
+                segment_index=1,
+                text="कब से?",
+                start_ms=1700,
+                end_ms=2400,
+            ),
+        ]
+    )
+    session.commit()
+    return recording
+
+
+def run_nlp(session_factory, nlp, recording_id, enqueued, threshold=0.35):
+    run_nlp_stage(
+        str(recording_id),
+        session_factory=session_factory,
+        nlp=nlp,
+        relevance_threshold=threshold,
+        enqueue_next=enqueued.append,
+    )
+
+
+def test_nlp_stage_persists_weights_extraction_and_advances_status(sync_session_factory):
+    nlp = StubNlp()
+    enqueued: list[str] = []
+    with sync_session_factory() as session:
+        recording = make_filtering_recording(session)
+
+    run_nlp(sync_session_factory, nlp, recording.id, enqueued)
+
+    assert enqueued == [str(recording.id)]
+    assert nlp.extract_calls == ["मुझे बुखार है।"]  # discarded segment excluded
+    with sync_session_factory() as session:
+        assert session.get(Recording, recording.id).status == RecordingStatus.ASSESSING
+        rows = session.scalars(
+            select(TranscriptSegment).order_by(TranscriptSegment.segment_index)
+        ).all()
+        assert [(r.relevance_weight, r.discarded) for r in rows] == [(0.9, False), (0.2, True)]
+        extraction = session.scalars(select(Extraction)).one()
+        assert extraction.symptoms == {"items": ["fever"]}
+        assert extraction.duration_days == 2
+        assert extraction.severity == "mild"
+        assert extraction.age is None
+        assert set(extraction.raw_llm_output) == {"relevance", "extraction"}
+
+
+def test_nlp_stage_filter_failure_marks_failed(sync_session_factory):
+    nlp = StubNlp(filter_error=RuntimeError("LLM down"))
+    enqueued: list[str] = []
+    with sync_session_factory() as session:
+        recording = make_filtering_recording(session)
+
+    with pytest.raises(RuntimeError):
+        run_nlp(sync_session_factory, nlp, recording.id, enqueued)
+
+    assert enqueued == []
+    with sync_session_factory() as session:
+        row = session.get(Recording, recording.id)
+        assert row.status == RecordingStatus.FAILED
+        assert row.failure_stage == "filtering"
+
+
+def test_nlp_stage_extract_failure_marks_failed(sync_session_factory):
+    nlp = StubNlp(extract_error=NlpError("bad JSON"))
+    enqueued: list[str] = []
+    with sync_session_factory() as session:
+        recording = make_filtering_recording(session)
+
+    with pytest.raises(NlpError):
+        run_nlp(sync_session_factory, nlp, recording.id, enqueued)
+
+    assert enqueued == []
+    with sync_session_factory() as session:
+        row = session.get(Recording, recording.id)
+        assert row.status == RecordingStatus.FAILED
+        assert row.failure_stage == "extracting"
+
+
+def test_nlp_stage_retry_replaces_extraction(sync_session_factory):
+    enqueued: list[str] = []
+    with sync_session_factory() as session:
+        recording = make_filtering_recording(session)
+
+    run_nlp(sync_session_factory, StubNlp(), recording.id, enqueued)
+    run_nlp(
+        sync_session_factory,
+        StubNlp(extraction=ExtractionResult(symptoms=["cough"])),
+        recording.id,
+        enqueued,
+    )
+
+    with sync_session_factory() as session:
+        extraction = session.scalars(select(Extraction)).one()
+        assert extraction.symptoms == {"items": ["cough"]}
+
+
+def test_nlp_stage_missing_recording_is_dropped(sync_session_factory):
+    enqueued: list[str] = []
+    run_nlp(sync_session_factory, StubNlp(), uuid.uuid4(), enqueued)
+    assert enqueued == []
+
+
+def test_nlp_stage_without_segments_fails_in_filtering(sync_session_factory):
+    enqueued: list[str] = []
+    with sync_session_factory() as session:
+        recording = make_recording(session)  # no transcript segments
+
+    with pytest.raises(NlpError):
+        run_nlp(sync_session_factory, StubNlp(), recording.id, enqueued)
+
+    with sync_session_factory() as session:
+        row = session.get(Recording, recording.id)
+        assert row.status == RecordingStatus.FAILED
+        assert row.failure_stage == "filtering"
+
+
+def test_nlp_stage_all_discarded_falls_back_to_full_transcript(sync_session_factory):
+    low = RelevanceResult(
+        segments=[
+            SegmentRelevance(index=0, relevance=0.1),
+            SegmentRelevance(index=1, relevance=0.1),
+        ]
+    )
+    nlp = StubNlp(relevance=low)
+    enqueued: list[str] = []
+    with sync_session_factory() as session:
+        recording = make_filtering_recording(session)
+
+    run_nlp(sync_session_factory, nlp, recording.id, enqueued)
+
+    assert nlp.extract_calls == ["मुझे बुखार है।\nकब से?"]
+    with sync_session_factory() as session:
+        assert session.get(Recording, recording.id).status == RecordingStatus.ASSESSING
+
+
+def test_parse_llm_json_tolerates_fences_and_prose():
+    reply = 'Here you go:\n```json\n{"symptoms": ["fever"], "age": null}\n```'
+    assert parse_llm_json(reply) == {"symptoms": ["fever"], "age": None}
+
+
+def test_parse_llm_json_rejects_non_json():
+    with pytest.raises(NlpError):
+        parse_llm_json("sorry, I cannot help with that")

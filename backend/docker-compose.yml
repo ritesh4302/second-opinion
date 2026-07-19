@@ -7,9 +7,10 @@ x-app-env: &app-env
   SO_S3_ACCESS_KEY: minioadmin
   SO_S3_SECRET_KEY: minioadmin
   SO_S3_BUCKET: recordings
-  # Speech stage defaults to the fake provider; export both on the host
-  # (or use an .env file) to hit the real Sarvam Batch API.
+  # AI stages default to fake providers; export the provider vars + key on
+  # the host (or use an .env file) to hit the real Sarvam APIs.
   SO_SPEECH_PROVIDER: ${SO_SPEECH_PROVIDER:-fake}
+  SO_NLP_PROVIDER: ${SO_NLP_PROVIDER:-fake}
   SO_SARVAM_API_KEY: ${SO_SARVAM_API_KEY:-}
 
 services:

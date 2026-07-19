@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     sarvam_model: str = "saaras:v3"
     sarvam_job_timeout_s: int = 600
 
+    # NLP stage (worker): relevance filter + structured extraction.
+    nlp_provider: str = "sarvam"  # "sarvam" | "fake"
+    sarvam_chat_model: str = "sarvam-m"
+    relevance_threshold: float = 0.35  # segments below this weight are discarded
+
 
 @lru_cache
 def get_settings() -> Settings:
