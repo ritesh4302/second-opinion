@@ -28,7 +28,7 @@ class Settings(BaseSettings):
 
     # NLP stage (worker): relevance filter + structured extraction.
     nlp_provider: str = "sarvam"  # "sarvam" | "fake"
-    sarvam_chat_model: str = "sarvam-m"
+    sarvam_chat_model: str = "sarvam-30b"  # sarvam-m is deprecated; 105b for higher quality
     relevance_threshold: float = 0.35  # segments below this weight are discarded
 
 

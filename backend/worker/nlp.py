@@ -3,7 +3,7 @@
 Two focused LLM calls per recording — relevance weighting (which speaker is
 the patient, which segments matter) and structured extraction — matching the
 `filtering` / `extracting` states (docs/BACKEND.md §2.2). The provider sits
-behind `NlpModel` so the vendor (sarvam-m for the POC) can be swapped per
+behind `NlpModel` so the vendor (sarvam-30b for the POC) can be swapped per
 benchmark results without touching pipeline orchestration.
 """
 
@@ -88,7 +88,7 @@ _RELEVANCE_SYSTEM = (
     "rate each segment's relevance to the medical complaint: first-person "
     "symptom descriptions high, pharmacist questions about the complaint "
     "medium, greetings/prices/unrelated chatter low. Reply with JSON only:\n"
-    '{"patient_speaker": "<speaker label or null>", '
+    '{"patient_speaker": "<label exactly as given, e.g. \\"0\\", or null>", '
     '"segments": [{"index": <int>, "relevance": <0.0-1.0>}]}\n'
     "Include every input index exactly once."
 )
@@ -107,7 +107,7 @@ _EXTRACTION_SYSTEM = (
 
 
 class SarvamNlp:
-    """sarvam-m chat completions; JSON prompted + Pydantic-validated (no schema mode)."""
+    """Sarvam chat completions; JSON prompted + Pydantic-validated (no schema mode)."""
 
     def __init__(self) -> None:
         from sarvamai import SarvamAI
@@ -119,6 +119,8 @@ class SarvamNlp:
         self._model = settings.sarvam_chat_model
 
     def _complete(self, system: str, user: str) -> dict:
+        # Sarvam chat models are reasoning models: keep effort low and leave
+        # headroom, or the token budget is spent before `content` is emitted.
         response = self._client.chat.completions(
             model=self._model,
             messages=[
@@ -126,7 +128,8 @@ class SarvamNlp:
                 {"role": "user", "content": user},
             ],
             temperature=0.2,
-            max_tokens=1024,
+            max_tokens=4096,
+            reasoning_effort="low",
         )
         return parse_llm_json(response.choices[0].message.content or "")
 

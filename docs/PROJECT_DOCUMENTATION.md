@@ -150,7 +150,7 @@ Android app + backend skeleton (Phase 2 started).
 | Data layer | Mock: in-memory case repository + simulated assessment pipeline with canned scenarios (real upload/backend integration is Phase 2) |
 | `AndroidManifest.xml` | `RECORD_AUDIO` permission declared |
 | Auth / login | None — intentional for POC (D6) |
-| Backend | `backend/` FastAPI + Celery: `POST /v1/recordings` upload → MinIO + Postgres, speech worker (Sarvam Saaras v3 Batch API, native diarization), NLP worker (sarvam-m relevance filter + structured extraction; fake providers for dev), status/assessment/feedback endpoints, Alembic migrations, docker-compose dev stack (see `docs/BACKEND.md`) |
+| Backend | `backend/` FastAPI + Celery: `POST /v1/recordings` upload → MinIO + Postgres, speech worker (Sarvam Saaras v3 Batch API, native diarization), NLP worker (sarvam-30b relevance filter + structured extraction; fake providers for dev), status/assessment/feedback endpoints, Alembic migrations, docker-compose dev stack (see `docs/BACKEND.md`) |
 | App ↔ backend | Not wired yet — app still runs on its mock data layer; AI pipeline stages not implemented |
 | Tests | Mobile: 48 host unit tests (`commonTest`) + 6 Compose UI tests (`androidTest`); Backend: 12 pytest API tests |
 
@@ -166,8 +166,8 @@ Android app + backend skeleton (Phase 2 started).
 - [x] Backend service skeleton + audio upload endpoint
 - [ ] Benchmark ASR candidates (Sarvam vs AI4Bharat vs Scribe) on real pharmacy-style Hinglish audio
 - [x] Diarization integration — Sarvam Batch API native diarization (single vendor; pyannote deferred, see Q2)
-- [x] LLM relevance weighting + irrelevant-segment filtering (sarvam-m; content-based patient inference per Q1)
-- [x] Structured extraction: symptoms, age, gender, location, duration, severity (sarvam-m, Pydantic-validated JSON)
+- [x] LLM relevance weighting + irrelevant-segment filtering (sarvam-30b; content-based patient inference per Q1)
+- [x] Structured extraction: symptoms, age, gender, location, duration, severity (sarvam-30b, Pydantic-validated JSON)
 
 ### Phase 3 — Assessment & decision support
 - [ ] Medical AI model integration → assessment + confidence + red flags

@@ -6,7 +6,7 @@
 
 **Last updated:** 2026-07-18
 **Status:** Steps 1–4 implemented (skeleton + endpoints + speech worker via Sarvam Batch API
-with native diarization + NLP worker via sarvam-m); assessment stage (step 5) is a stub
+with native diarization + NLP worker via sarvam-30b); assessment stage (step 5) is a stub
 
 ---
 
@@ -232,8 +232,9 @@ users).
    diarization with ASR (answers Q2), so single-vendor for the POC; pyannote deferred until
    real-audio quality says otherwise. ASR benchmarking still pending (needs keys + real audio)
 4. ~~NLP worker: relevance filter + extraction with structured output~~ ✅ — two focused
-   sarvam-m calls (relevance weighting, then extraction from kept segments), prompted JSON +
-   Pydantic validation; raw LLM replies stored in `extractions.raw_llm_output` for audit
+   sarvam-30b calls (relevance weighting, then extraction from kept segments; sarvam-m is
+   deprecated), prompted JSON + Pydantic validation; raw LLM replies stored in
+   `extractions.raw_llm_output` for audit
 5. Assessment stage (blocked on medical model choice — open question Q3)
 6. ~~Feedback endpoint + polling status endpoint~~ ✅ (feedback + status + assessment retrieval)
 7. Observability baseline (structured logs + queue/stage metrics)
@@ -255,7 +256,7 @@ Layout: `backend/` — uv project, Python 3.12, single package `app/` + `worker/
 | `backend/app/routers/` | `health` (healthz/readyz), `recordings` (upload/status/assessment), `assessments` (feedback) |
 | `backend/worker/main.py` | Celery worker entrypoint; speech + NLP stage tasks, assessment stub (step 5) |
 | `backend/worker/transcription.py` | `Transcriber` port; `SarvamTranscriber` (Batch API, `with_diarization=True`) + `FakeTranscriber` (dev/demo, `SO_SPEECH_PROVIDER=fake`) |
-| `backend/worker/nlp.py` | `NlpModel` port; `SarvamNlp` (sarvam-m chat, prompted-JSON + Pydantic validation) + `FakeNlp` (`SO_NLP_PROVIDER=fake`); relevance + extraction prompts |
+| `backend/worker/nlp.py` | `NlpModel` port; `SarvamNlp` (sarvam-30b chat, prompted-JSON + Pydantic validation) + `FakeNlp` (`SO_NLP_PROVIDER=fake`); relevance + extraction prompts |
 | `backend/worker/pipeline.py` | `run_speech_stage` (S3 download → transcribe → segments, `transcribing` → `filtering`) + `run_nlp_stage` (relevance weights/discard flags → `extracting` → Extraction row → `assessing`); replace-on-retry persistence, failures set `failed` + stage |
 | `backend/worker/db.py` | Sync SQLAlchemy session for Celery tasks (psycopg driver on the same DB) |
 | `backend/alembic/` | Async migrations; URL from settings; initial schema revision applied |
@@ -267,8 +268,13 @@ Verified end-to-end on the compose stack (fake providers): upload → 202 + MinI
 speech stage → diarized segments → NLP stage → relevance weights + discard flags on
 `transcripts`, `extractions` row (symptoms/duration/severity + raw LLM audit payload) →
 status `assessing` → assessment stub task received; idempotent re-upload returns 200.
-Real Sarvam calls need `SO_SPEECH_PROVIDER=sarvam` / `SO_NLP_PROVIDER=sarvam` +
-`SO_SARVAM_API_KEY` (compose defaults to `fake`).
+
+Also verified against the **real Sarvam APIs** (`SO_SPEECH_PROVIDER=sarvam` /
+`SO_NLP_PROVIDER=sarvam` + `SO_SARVAM_API_KEY`; compose defaults to `fake`) with a
+synthesized two-voice Hindi pharmacy exchange: Saaras v3 transcribed and separated the
+speakers correctly, and sarvam-30b identified the patient speaker and extracted symptoms,
+age, and duration accurately. Note: Sarvam chat models are reasoning models — requests set
+`reasoning_effort="low"` and `max_tokens=4096`, or the budget is consumed before the reply.
 
 ## 12. Related Documents
 
