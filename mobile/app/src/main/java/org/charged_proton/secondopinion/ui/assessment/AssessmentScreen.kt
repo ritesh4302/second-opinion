@@ -1,5 +1,6 @@
 package org.charged_proton.secondopinion.ui.assessment
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -27,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.charged_proton.secondopinion.R
 import org.charged_proton.secondopinion.domain.model.PharmacistDecision
+import org.charged_proton.secondopinion.domain.model.RedFlag
 import org.charged_proton.secondopinion.presentation.assessment.AssessmentViewModel
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
@@ -66,26 +68,12 @@ fun AssessmentScreen(
         }
 
         uiState.assessment?.let { assessment ->
+            if (assessment.redFlags.isNotEmpty()) {
+                ReferralBanner(assessment.redFlags)
+            }
+
             SectionTitle(stringResource(R.string.section_summary))
             Text(assessment.symptomSummary, style = MaterialTheme.typography.bodyLarge)
-
-            if (assessment.redFlags.isNotEmpty()) {
-                SectionTitle(stringResource(R.string.section_red_flags))
-                assessment.redFlags.forEach { flag ->
-                    Card(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer,
-                        ),
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Text(flag.description, style = MaterialTheme.typography.bodyMedium)
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(flag.action, style = MaterialTheme.typography.titleSmall)
-                        }
-                    }
-                }
-            }
 
             SectionTitle(stringResource(R.string.section_conditions))
             assessment.conditions.forEach { condition ->
@@ -106,7 +94,26 @@ fun AssessmentScreen(
                 assessment.otcGuidance.forEach { advice ->
                     Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                         Column(modifier = Modifier.padding(12.dp)) {
-                            Text(advice.medicine, style = MaterialTheme.typography.titleSmall)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    advice.medicine,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                if (advice.prescription) {
+                                    Text(
+                                        text = stringResource(R.string.prescription_drug_label),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onErrorContainer,
+                                        modifier = Modifier
+                                            .background(
+                                                MaterialTheme.colorScheme.errorContainer,
+                                                MaterialTheme.shapes.small,
+                                            )
+                                            .padding(horizontal = 8.dp, vertical = 2.dp),
+                                    )
+                                }
+                            }
                             Text(advice.dosage, style = MaterialTheme.typography.bodyMedium)
                             Text(advice.note, style = MaterialTheme.typography.bodySmall)
                         }
@@ -138,7 +145,32 @@ private fun SectionTitle(text: String) {
     Spacer(modifier = Modifier.height(8.dp))
 }
 
-/** Accept / refer-instead buttons, or the recorded decision once submitted. */
+/** Prominent "refer to a doctor" escalation banner, shown above all other content. */
+@Composable
+private fun ReferralBanner(redFlags: List<RedFlag>) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer,
+            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        ),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = stringResource(R.string.refer_to_doctor),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            redFlags.forEach { flag ->
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(flag.description, style = MaterialTheme.typography.bodyMedium)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(flag.action, style = MaterialTheme.typography.titleSmall)
+            }
+        }
+    }
+}
+
+/** Accept / reject / different-action buttons, or the recorded decision once submitted. */
 @Composable
 private fun DecisionBar(
     decision: PharmacistDecision?,
@@ -152,23 +184,32 @@ private fun DecisionBar(
         )
         return
     }
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Button(
             onClick = { onDecision(PharmacistDecision.ACCEPTED) },
             enabled = !isSubmitting,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.fillMaxWidth(),
         ) {
             Text(stringResource(R.string.decision_accept))
         }
-        OutlinedButton(
-            onClick = { onDecision(PharmacistDecision.OVERRIDDEN) },
-            enabled = !isSubmitting,
-            modifier = Modifier.weight(1f),
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(stringResource(R.string.decision_override))
+            OutlinedButton(
+                onClick = { onDecision(PharmacistDecision.REJECTED) },
+                enabled = !isSubmitting,
+                modifier = Modifier.weight(1f),
+            ) {
+                Text(stringResource(R.string.decision_reject))
+            }
+            OutlinedButton(
+                onClick = { onDecision(PharmacistDecision.OVERRIDDEN) },
+                enabled = !isSubmitting,
+                modifier = Modifier.weight(1f),
+            ) {
+                Text(stringResource(R.string.decision_override))
+            }
         }
     }
 }

@@ -14,10 +14,12 @@
 
     <string name="assessment_in_progress">Analyzing… %1$s</string>
     <string name="section_summary">Symptom summary</string>
-    <string name="section_red_flags">Red flags</string>
+    <string name="refer_to_doctor">Refer to a doctor</string>
     <string name="section_conditions">Possible conditions</string>
-    <string name="section_otc">OTC guidance</string>
+    <string name="section_otc">Medicine guidance</string>
+    <string name="prescription_drug_label">Prescription drug</string>
     <string name="decision_accept">Accept advice</string>
+    <string name="decision_reject">Reject advice</string>
     <string name="decision_override">Different action</string>
     <string name="decision_recorded">Decision recorded: %1$s</string>
 

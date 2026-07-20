@@ -5,7 +5,7 @@
 > For product context (problem, solution, decisions D1–D6, roadmap) see
 > `docs/PROJECT_DOCUMENTATION.md`.
 
-**Last updated:** 2026-07-18
+**Last updated:** 2026-07-20
 **Status:** KMM layer-per-module; full case → assessment → decision flow on a **mock data layer**
 (in-memory repositories simulate the backend pipeline until Phase 2 lands); on-device VAD
 silence trimming (Silero via sherpa-onnx) implemented in the recording pipeline
@@ -220,8 +220,9 @@ AssessmentViewModel(caseId) init
       ├─ InProgress(UPLOADING → DIARIZING → TRANSCRIBING → EXTRACTING → ASSESSING)
       │    (mock: staged delays; case status mirrors UPLOADING/PROCESSING/COMPLETED)
       └─ Completed(Assessment(summary, conditions, redFlags, otcGuidance, disclaimer))
-  → Assessment screen renders result (red flags first, error container styling)
-  → Pharmacist accepts / overrides → SubmitFeedbackUseCase → decision recorded
+  → Assessment screen renders result ("Refer to a doctor" escalation banner first when red
+      flags exist; guidance items with prescription=true carry a "Prescription drug" badge)
+  → Pharmacist accepts / rejects / overrides → SubmitFeedbackUseCase → decision recorded
 HistoryScreen
   → ObserveCasesUseCase → case list (newest first) → tap → assessment/{caseId}
       (already-assessed case: Flow emits Completed immediately, decision preloaded)
@@ -268,7 +269,7 @@ receives a ready-to-use `AudioRecorder` or a failure.
 | `mobile/app/.../MainActivity.kt` | Sets Compose content; hosts `AppNavHost` inside `Scaffold` |
 | `mobile/app/.../ui/navigation/AppNavHost.kt` | Navigation Compose graph: `record` (start), `history`, `assessment/{caseId}` |
 | `mobile/app/.../ui/record/RecordScreen.kt` | Speak/Stop, `RECORD_AUDIO` permission, "Get assessment" (when case created), "View history" |
-| `mobile/app/.../ui/assessment/AssessmentScreen.kt` | Pipeline progress spinner, assessment result (red flags → conditions → OTC → disclaimer), accept/override decision bar |
+| `mobile/app/.../ui/assessment/AssessmentScreen.kt` | Pipeline progress spinner, assessment result (referral banner → summary → conditions → medicine guidance with prescription badges → disclaimer), accept/reject/override decision bar |
 | `mobile/app/.../ui/history/HistoryScreen.kt` | Case list (timestamp + status), tap → assessment; empty state |
 | `mobile/app/.../ui/theme/*` | Material3 theme, dynamic color (Android 12+), dark/light |
 | `mobile/app/src/main/res/values/strings.xml` | UI strings (record/assessment/history/decision/case-status) |
@@ -282,7 +283,7 @@ receives a ready-to-use `AudioRecorder` or a failure.
 | `mobile/shared/data/.../audio/AacM4aEncoder.kt` | Mono 16-bit PCM → AAC-LC/.m4a via `MediaCodec` + `MediaMuxer` |
 | `mobile/shared/data/.../repository/InMemoryCaseRepository.kt` | Mock: `StateFlow`-backed case store (newest first) |
 | `mobile/shared/data/.../repository/MockAssessmentRepository.kt` | Mock: simulates pipeline with staged delays, rotates canned scenarios, in-memory feedback store |
-| `mobile/shared/data/.../mock/MockAssessmentScenarios.kt` | Three canned assessments: viral URI, gastroenteritis, red-flag chest pain (no OTC, urgent referral) |
+| `mobile/shared/data/.../mock/MockAssessmentScenarios.kt` | Three canned assessments: viral URI, gastroenteritis (incl. a prescription-labeled medicine), red-flag chest pain (no OTC, urgent referral) |
 | `mobile/shared/presentation/.../symptom/*` | `SymptomViewModel` (creates case on stop → `lastCaseId`), `SymptomUiState` + `SymptomStatus` |
 | `mobile/shared/presentation/.../assessment/*` | `AssessmentViewModel` (streams progress, loads prior decision, submits feedback), `AssessmentUiState` |
 | `mobile/shared/presentation/.../history/HistoryViewModel.kt` | `stateIn`-shared case list (`HistoryUiState`) |
@@ -337,11 +338,14 @@ cd mobile
   `Dispatchers.setMain(UnconfinedTestDispatcher())`, and Turbine for `StateFlow`
   transitions; a `MutableSharedFlow`-driven fake steps the assessment pipeline; includes
   a gated-suspend fake proving double-stop re-entry is ignored (21 tests)
-- `:app` `androidTest` — Compose UI tests (`ui-test-junit4`) for the critical
-  record-screen flows: Speak/Stop toggle, saved-case → "Get assessment" navigation,
-  permission-denied messaging, history navigation (6 tests, device/emulator required).
-  `RecordScreen` gets a `SymptomViewModel` built on androidTest fakes — no microphone
-  or Koin graph involved; `RECORD_AUDIO` granted via `UiAutomation` in `@Before`
+- `:app` `androidTest` — Compose UI tests (`ui-test-junit4`) for all three screens
+  (17 tests, device/emulator required): record (Speak/Stop toggle, saved-case →
+  "Get assessment" navigation, permission-denied messaging, history navigation),
+  assessment (pipeline progress, failure reason, referral banner, prescription-drug
+  badge, accept/reject/override decision bar, decision recording/preloading), and
+  history (empty state, status labels, tap-to-open). Screens get ViewModels built on
+  androidTest fakes — no microphone, backend, or Koin graph involved; `RECORD_AUDIO`
+  granted via `UiAutomation` in `@Before`
 - Convention: hand-written fakes over mocking libraries (pure Kotlin, KMP-compatible);
   no mocking framework is in the catalog
 

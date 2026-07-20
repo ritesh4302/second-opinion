@@ -7,7 +7,8 @@ import org.charged_proton.secondopinion.domain.model.RedFlag
 
 /**
  * Canned assessment scenarios the mock backend rotates through, so testers see
- * the normal, the mixed, and the red-flag/referral paths without a real pipeline.
+ * the normal, the mixed (incl. a prescription-labeled medicine), and the
+ * red-flag/referral paths without a real pipeline.
  */
 internal object MockAssessmentScenarios {
 
@@ -88,6 +89,12 @@ internal object MockAssessmentScenarios {
                 medicine = "Zinc 20 mg",
                 dosage = "Once daily for 10–14 days",
                 note = "Reduces duration and severity of diarrhoea.",
+            ),
+            OtcAdvice(
+                medicine = "Ondansetron 4 mg",
+                dosage = "1 tablet up to twice a day if vomiting",
+                note = "Schedule H — requires a doctor's prescription; pharmacist to decide.",
+                prescription = true,
             ),
         ),
         disclaimer = DISCLAIMER,

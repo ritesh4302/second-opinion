@@ -30,9 +30,14 @@ data class RedFlag(
     val action: String,
 )
 
-/** OTC-only guidance — scheduled (H/H1) drugs are never suggested. */
+/**
+ * Medicine guidance item. OTC preferred; prescription (Schedule H/H1) medicines
+ * may be suggested but carry [prescription] = true — the UI shows a clear
+ * "prescription drug" label and the pharmacist decides.
+ */
 data class OtcAdvice(
     val medicine: String,
     val dosage: String,
     val note: String,
+    val prescription: Boolean = false,
 )

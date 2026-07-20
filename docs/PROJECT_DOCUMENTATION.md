@@ -4,7 +4,7 @@
 > project. It captures the problem, the agreed solution, key decisions, architecture, current
 > codebase state, and the roadmap. Keep it updated as decisions change.
 
-**Last updated:** 2026-07-18
+**Last updated:** 2026-07-20
 **Status:** POC in progress
 
 ---
@@ -147,14 +147,14 @@ Android app + backend skeleton (Phase 2 started).
 |---|---|
 | Project | Kotlin Multiplatform (KMM), layer-per-module: `:app` (Compose UI) + `:shared:domain` / `:shared:data` / `:shared:presentation`; Material3, dynamic color; minSdk 29, targetSdk 37 |
 | Package | `org.charged_proton.secondopinion` |
-| UI flow | Record (Speak/Stop + runtime permission) → assessment (pipeline progress, result, pharmacist accept/override) → history; Navigation Compose |
+| UI flow | Record (Speak/Stop + runtime permission) → assessment (pipeline progress, referral banner on red flags, prescription-labeled guidance, pharmacist accept/reject/override) → history; Navigation Compose |
 | Audio capture | `AudioRecord` 16 kHz mono PCM → Silero VAD silence trim (sherpa-onnx) → AAC/.m4a in app cache (see §6.3 and `docs/ANDROID_APP.md` §5.1) |
 | Data layer | Mock: in-memory case repository + simulated assessment pipeline with canned scenarios (real upload/backend integration is Phase 2) |
 | `AndroidManifest.xml` | `RECORD_AUDIO` permission declared |
 | Auth / login | None — intentional for POC (D6) |
-| Backend | `backend/` FastAPI + Celery: `POST /v1/recordings` upload → MinIO + Postgres, speech worker (Sarvam Saaras v3 Batch API, native diarization), NLP worker (sarvam-30b relevance filter + structured extraction), assessment worker (sarvam-30b triage: conditions + confidence, red flags, OTC-only guidance; fake providers for dev), status/assessment/feedback endpoints, Alembic migrations, docker-compose dev stack (see `docs/BACKEND.md`) |
+| Backend | `backend/` FastAPI + Celery: `POST /v1/recordings` upload → MinIO + Postgres, speech worker (Sarvam Saaras v3 Batch API, native diarization), NLP worker (sarvam-30b relevance filter + structured extraction), assessment worker (sarvam-30b triage: conditions + confidence, red flags, OTC-preferred guidance with `prescription` labels; fake providers for dev), status/assessment/feedback endpoints, Alembic migrations, docker-compose dev stack (see `docs/BACKEND.md`) |
 | App ↔ backend | Not wired yet — app still runs on its mock data layer; AI pipeline stages not implemented |
-| Tests | Mobile: 48 host unit tests (`commonTest`) + 6 Compose UI tests (`androidTest`); Backend: 12 pytest API tests |
+| Tests | Mobile: 48 host unit tests (`commonTest`) + 17 Compose UI tests (`androidTest`); Backend: 32 pytest tests |
 
 ## 8. Roadmap
 
@@ -175,9 +175,12 @@ Android app + backend skeleton (Phase 2 started).
 - [x] Medical AI model integration → assessment + confidence + red flags (interim: sarvam-30b behind the `Assessor` port; dedicated medical LLM pending Q3 benchmark)
 - [x] Prescription-drug labeling (requirement change: no hard blocklist) — guidance items
   carry `prescription: true/false` from the assessment stage
-- [ ] "Prescription drug" label rendering in the app UI
-- [ ] Red-flag referral escalation UI
-- [ ] Pharmacist accept/reject/override capture (feedback loop)
+- [x] "Prescription drug" label rendering in the app UI (badge on guidance items with
+  `prescription: true`)
+- [x] Red-flag referral escalation UI (prominent "Refer to a doctor" banner above all content)
+- [x] Pharmacist accept/reject/override capture (feedback loop) — full three-way decision bar
+  on the mock data layer; backend `POST /v1/assessments/{id}/feedback` exists (app ↔ backend
+  Ktor wiring is the remaining integration task, tracked under Phase 2 app integration)
 
 ### Phase 4 — Hardening & pilot
 - [ ] Authentication and role model (pharmacist / patient / doctor)
