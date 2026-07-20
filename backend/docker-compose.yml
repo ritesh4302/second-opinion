@@ -11,6 +11,7 @@ x-app-env: &app-env
   # the host (or use an .env file) to hit the real Sarvam APIs.
   SO_SPEECH_PROVIDER: ${SO_SPEECH_PROVIDER:-fake}
   SO_NLP_PROVIDER: ${SO_NLP_PROVIDER:-fake}
+  SO_ASSESSMENT_PROVIDER: ${SO_ASSESSMENT_PROVIDER:-fake}
   SO_SARVAM_API_KEY: ${SO_SARVAM_API_KEY:-}
 
 services:

@@ -20,6 +20,8 @@ class Settings(BaseSettings):
 
     max_upload_bytes: int = 50 * 1024 * 1024
 
+    log_format: str = "json"  # "json" | "console" (human-readable for local dev)
+
     # Speech stage (worker). "fake" runs the pipeline without external calls.
     speech_provider: str = "sarvam"  # "sarvam" | "fake"
     sarvam_api_key: str = ""
@@ -30,6 +32,12 @@ class Settings(BaseSettings):
     nlp_provider: str = "sarvam"  # "sarvam" | "fake"
     sarvam_chat_model: str = "sarvam-30b"  # sarvam-m is deprecated; 105b for higher quality
     relevance_threshold: float = 0.35  # segments below this weight are discarded
+
+    # Assessment stage (worker): triage output. Interim answer to Q3 — a
+    # general Sarvam chat model behind the Assessor port until a medical LLM
+    # is benchmarked.
+    assessment_provider: str = "sarvam"  # "sarvam" | "fake"
+    sarvam_assessment_model: str = "sarvam-30b"
 
 
 @lru_cache

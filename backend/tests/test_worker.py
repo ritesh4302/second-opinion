@@ -1,4 +1,4 @@
-"""Speech + NLP stage tests: sync session + fakes (no Celery, S3, or Sarvam)."""
+"""Speech + NLP + assessment stage tests: sync session + fakes (no Celery, S3, or Sarvam)."""
 
 import uuid
 
@@ -8,7 +8,16 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.db import Base
-from app.models import Extraction, Recording, RecordingStatus, TranscriptSegment
+from app.models import Assessment, Extraction, Recording, RecordingStatus, TranscriptSegment
+from worker.assessment import (
+    PROMPT_VERSION,
+    AssessmentError,
+    AssessmentResult,
+    CaseSummary,
+    ConditionHypothesis,
+    OtcAdvice,
+    RedFlag,
+)
 from worker.nlp import (
     ExtractionResult,
     NlpError,
@@ -16,7 +25,7 @@ from worker.nlp import (
     SegmentRelevance,
     parse_llm_json,
 )
-from worker.pipeline import run_nlp_stage, run_speech_stage
+from worker.pipeline import run_assessment_stage, run_nlp_stage, run_speech_stage
 from worker.transcription import Segment, parse_sarvam_output
 
 SEGMENTS = [
@@ -376,3 +385,130 @@ def test_parse_llm_json_tolerates_fences_and_prose():
 def test_parse_llm_json_rejects_non_json():
     with pytest.raises(NlpError):
         parse_llm_json("sorry, I cannot help with that")
+
+
+ASSESSMENT = AssessmentResult(
+    conditions=[ConditionHypothesis(name="Viral fever", confidence_percent=70, rationale="ok")],
+    red_flags=[RedFlag(description="fever > 3 days", action="refer to doctor")],
+    otc_guidance=[OtcAdvice(medicine="Paracetamol 500 mg", dosage="1 tab q6h", note="after food")],
+    raw={"conditions": []},
+)
+
+
+class StubAssessor:
+    model_id = "stub-model"
+
+    def __init__(self, result: AssessmentResult = ASSESSMENT, error: Exception | None = None):
+        self.result = result
+        self.error = error
+        self.cases: list[CaseSummary] = []
+
+    def assess(self, case: CaseSummary) -> AssessmentResult:
+        self.cases.append(case)
+        if self.error:
+            raise self.error
+        return self.result
+
+
+def make_assessing_recording(session: Session) -> Recording:
+    recording = make_filtering_recording(session)
+    recording.status = RecordingStatus.ASSESSING
+    session.get(
+        TranscriptSegment,
+        session.scalars(
+            select(TranscriptSegment.id)
+            .where(TranscriptSegment.recording_id == recording.id)
+            .where(TranscriptSegment.segment_index == 1)
+        ).one(),
+    ).discarded = True
+    session.add(
+        Extraction(
+            recording_id=recording.id,
+            symptoms={"items": ["fever"]},
+            age=35,
+            duration_days=2,
+        )
+    )
+    session.commit()
+    return recording
+
+
+def run_assess(session_factory, assessor, recording_id):
+    run_assessment_stage(
+        str(recording_id),
+        session_factory=session_factory,
+        assessor=assessor,
+    )
+
+
+def test_assessment_stage_persists_assessment_and_completes(sync_session_factory):
+    assessor = StubAssessor()
+    with sync_session_factory() as session:
+        recording = make_assessing_recording(session)
+
+    run_assess(sync_session_factory, assessor, recording.id)
+
+    case = assessor.cases[0]
+    assert case.symptoms == ["fever"]
+    assert case.age == 35
+    assert case.transcript == "मुझे बुखार है।"  # discarded segment excluded
+    with sync_session_factory() as session:
+        assert session.get(Recording, recording.id).status == RecordingStatus.COMPLETED
+        row = session.scalars(select(Assessment)).one()
+        assert row.conditions == [
+            {"name": "Viral fever", "confidence_percent": 70, "rationale": "ok"}
+        ]
+        assert row.red_flags == [{"description": "fever > 3 days", "action": "refer to doctor"}]
+        assert row.otc_guidance[0]["medicine"] == "Paracetamol 500 mg"
+        assert row.model_id == "stub-model"
+        assert row.prompt_version == PROMPT_VERSION
+        assert row.raw_llm_output == {"conditions": []}
+
+
+def test_assessment_stage_failure_marks_failed(sync_session_factory):
+    assessor = StubAssessor(error=AssessmentError("LLM down"))
+    with sync_session_factory() as session:
+        recording = make_assessing_recording(session)
+
+    with pytest.raises(AssessmentError):
+        run_assess(sync_session_factory, assessor, recording.id)
+
+    with sync_session_factory() as session:
+        row = session.get(Recording, recording.id)
+        assert row.status == RecordingStatus.FAILED
+        assert row.failure_stage == "assessing"
+        assert session.scalars(select(Assessment)).one_or_none() is None
+
+
+def test_assessment_stage_retry_replaces_assessment(sync_session_factory):
+    with sync_session_factory() as session:
+        recording = make_assessing_recording(session)
+
+    run_assess(sync_session_factory, StubAssessor(), recording.id)
+    replacement = AssessmentResult(
+        conditions=[ConditionHypothesis(name="Common cold", confidence_percent=50)]
+    )
+    run_assess(sync_session_factory, StubAssessor(result=replacement), recording.id)
+
+    with sync_session_factory() as session:
+        row = session.scalars(select(Assessment)).one()
+        assert row.conditions[0]["name"] == "Common cold"
+
+
+def test_assessment_stage_missing_recording_is_dropped(sync_session_factory):
+    assessor = StubAssessor()
+    run_assess(sync_session_factory, assessor, uuid.uuid4())
+    assert assessor.cases == []
+
+
+def test_assessment_stage_without_extraction_fails(sync_session_factory):
+    with sync_session_factory() as session:
+        recording = make_filtering_recording(session)  # no extraction row
+
+    with pytest.raises(AssessmentError):
+        run_assess(sync_session_factory, StubAssessor(), recording.id)
+
+    with sync_session_factory() as session:
+        row = session.get(Recording, recording.id)
+        assert row.status == RecordingStatus.FAILED
+        assert row.failure_stage == "assessing"

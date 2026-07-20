@@ -112,6 +112,7 @@ class Assessment(Base):
     otc_guidance: Mapped[list] = mapped_column(JsonDict)
     model_id: Mapped[str] = mapped_column(String(100))
     prompt_version: Mapped[str] = mapped_column(String(50))
+    raw_llm_output: Mapped[dict | None] = mapped_column(JsonDict, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     recording: Mapped[Recording] = relationship(back_populates="assessment")

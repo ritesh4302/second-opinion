@@ -150,7 +150,7 @@ Android app + backend skeleton (Phase 2 started).
 | Data layer | Mock: in-memory case repository + simulated assessment pipeline with canned scenarios (real upload/backend integration is Phase 2) |
 | `AndroidManifest.xml` | `RECORD_AUDIO` permission declared |
 | Auth / login | None — intentional for POC (D6) |
-| Backend | `backend/` FastAPI + Celery: `POST /v1/recordings` upload → MinIO + Postgres, speech worker (Sarvam Saaras v3 Batch API, native diarization), NLP worker (sarvam-30b relevance filter + structured extraction; fake providers for dev), status/assessment/feedback endpoints, Alembic migrations, docker-compose dev stack (see `docs/BACKEND.md`) |
+| Backend | `backend/` FastAPI + Celery: `POST /v1/recordings` upload → MinIO + Postgres, speech worker (Sarvam Saaras v3 Batch API, native diarization), NLP worker (sarvam-30b relevance filter + structured extraction), assessment worker (sarvam-30b triage: conditions + confidence, red flags, OTC-only guidance; fake providers for dev), status/assessment/feedback endpoints, Alembic migrations, docker-compose dev stack (see `docs/BACKEND.md`) |
 | App ↔ backend | Not wired yet — app still runs on its mock data layer; AI pipeline stages not implemented |
 | Tests | Mobile: 48 host unit tests (`commonTest`) + 6 Compose UI tests (`androidTest`); Backend: 12 pytest API tests |
 
@@ -170,7 +170,7 @@ Android app + backend skeleton (Phase 2 started).
 - [x] Structured extraction: symptoms, age, gender, location, duration, severity (sarvam-30b, Pydantic-validated JSON)
 
 ### Phase 3 — Assessment & decision support
-- [ ] Medical AI model integration → assessment + confidence + red flags
+- [x] Medical AI model integration → assessment + confidence + red flags (interim: sarvam-30b behind the `Assessor` port; dedicated medical LLM pending Q3 benchmark)
 - [ ] OTC-only guidance layer with hard blocklist of scheduled drugs
 - [ ] Red-flag referral escalation UI
 - [ ] Pharmacist accept/reject/override capture (feedback loop)
@@ -187,7 +187,7 @@ Android app + backend skeleton (Phase 2 started).
 |---|---|---|
 | Q1 | How to identify which diarized speaker is the patient | Content-based inference (first-person symptom language) implemented in the NLP stage relevance prompt; accuracy on real pharmacy audio still to be validated |
 | Q2 | ~~Does Sarvam provide adequate diarization natively?~~ | **Answered:** yes — Saaras v3 Batch API supports `with_diarization` (≤1 h, ≤8 speakers); integrated as single-vendor speech stage. Quality on real pharmacy audio still to be validated (benchmark task) |
-| Q3 | Which medical AI model for assessment | To be researched in Phase 3 (open-source medical LLMs vs API) |
+| Q3 | Which medical AI model for assessment | Interim: general sarvam-30b behind the `Assessor` port (working end-to-end); dedicated medical LLM (open-source, e.g. MedGemma-class, vs API) still to be benchmarked — drop-in swap |
 | Q4 | CDSCO medical-device classification | Legal review required before pilot |
 | Q5 | DPDP Act 2023 compliance | Voice + health data are sensitive; consent flow and retention policy needed before any real-patient use |
 | Q6 | Liability framing | Pharmacist is final decision-maker; needs explicit in-app disclaimers and terms |

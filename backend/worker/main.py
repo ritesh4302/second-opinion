@@ -1,12 +1,16 @@
 """Celery worker entrypoint: `celery -A worker.main worker`.
 
-Speech stage (step 3, Sarvam Batch API with native diarization) and NLP
-stage (step 4, relevance filter + extraction via sarvam-m) are implemented.
-The assessment stage (step 5) is still a stub.
+Speech stage (step 3, Sarvam Batch API with native diarization), NLP stage
+(step 4, relevance filter + extraction), and assessment stage (step 5,
+triage output) are implemented.
 """
 
 import logging
 
+import structlog
+from celery import signals
+
+from app.observability import configure_logging
 from app.queue import (
     PROCESS_EXTRACTION_TASK,
     PROCESS_RECORDING_TASK,
@@ -15,14 +19,37 @@ from app.queue import (
 )
 from app.settings import get_settings
 from app.storage import get_storage
+from worker.assessment import get_assessor
 from worker.db import get_session_factory
 from worker.nlp import get_nlp_model
-from worker.pipeline import run_nlp_stage, run_speech_stage
+from worker.pipeline import run_assessment_stage, run_nlp_stage, run_speech_stage
 from worker.transcription import get_transcriber
 
 logger = logging.getLogger(__name__)
 
 celery_app = make_celery()
+
+
+@signals.setup_logging.connect
+def _setup_logging(**_kwargs) -> None:
+    # Replaces Celery's own logging setup so worker output matches the API.
+    configure_logging()
+
+
+@signals.task_prerun.connect
+def _bind_task_context(task_id=None, args=None, **_kwargs) -> None:
+    # Every pipeline task takes recording_id as its first argument; binding it
+    # here puts it on every log line of the stage (docs/BACKEND.md §7).
+    structlog.contextvars.clear_contextvars()
+    context = {"task_id": task_id}
+    if args:
+        context["recording_id"] = args[0]
+    structlog.contextvars.bind_contextvars(**context)
+
+
+@signals.task_postrun.connect
+def _clear_task_context(**_kwargs) -> None:
+    structlog.contextvars.clear_contextvars()
 
 
 @celery_app.task(name=PROCESS_RECORDING_TASK)
@@ -62,6 +89,10 @@ def _enqueue_assessment(recording_id: str) -> None:
 
 @celery_app.task(name=PROCESS_EXTRACTION_TASK)
 def process_extraction(recording_id: str) -> str:
-    # Assessment stage lands in build-order step 5 (blocked on Q3: medical model).
-    logger.info("received recording %s for assessment stage (stub)", recording_id)
+    logger.info("received recording %s for assessment stage", recording_id)
+    run_assessment_stage(
+        recording_id,
+        session_factory=get_session_factory(),
+        assessor=get_assessor(),
+    )
     return recording_id

@@ -1,27 +1,37 @@
-"""Pipeline stages: speech (download, diarize+transcribe, persist segments)
-and NLP (relevance filter + structured extraction).
+"""Pipeline stages: speech (download, diarize+transcribe, persist segments),
+NLP (relevance filter + structured extraction), and assessment (triage output).
 
 Dependencies are injected so tests run the stages with fakes; worker/main.py
-wires the real S3 storage, Sarvam transcriber/NLP model, and Celery enqueue.
+wires the real S3 storage, Sarvam transcriber/NLP/assessor, and Celery enqueue.
 """
 
-import logging
+import time
 import uuid
 from collections.abc import Callable
 
+import structlog
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.models import Extraction, Recording, RecordingStatus, TranscriptSegment
+from app.models import Assessment, Extraction, Recording, RecordingStatus, TranscriptSegment
 from app.storage import ObjectStorage
+from worker.assessment import PROMPT_VERSION, AssessmentError, Assessor, CaseSummary
 from worker.nlp import NlpError, NlpModel, TranscriptLine
 from worker.transcription import Transcriber
 
-logger = logging.getLogger(__name__)
+# Structured stage events (stage, duration_ms, outcome) are the log-based
+# metrics baseline (docs/BACKEND.md §7); recording_id also arrives via the
+# task-level contextvars binding in worker/main.py.
+logger = structlog.get_logger(__name__)
 
 SPEECH_STAGE = "transcribing"
 FILTER_STAGE = "filtering"
 EXTRACT_STAGE = "extracting"
+ASSESS_STAGE = "assessing"
+
+
+def _elapsed_ms(start: float) -> float:
+    return round((time.perf_counter() - start) * 1000, 1)
 
 
 def run_speech_stage(
@@ -33,10 +43,11 @@ def run_speech_stage(
     enqueue_next: Callable[[str], None],
 ) -> None:
     rid = uuid.UUID(recording_id)
+    start = time.perf_counter()
     with session_factory() as session:
         recording = session.get(Recording, rid)
         if recording is None:
-            logger.warning("recording %s not found; dropping task", recording_id)
+            logger.warning("recording_missing", recording_id=recording_id)
             return
 
         # Sarvam bundles diarization with ASR, so both map to one stage.
@@ -69,10 +80,21 @@ def run_speech_stage(
             recording.failure_stage = SPEECH_STAGE
             session.commit()
             # No health data in logs: IDs only (docs/BACKEND.md §8)
-            logger.exception("speech stage failed for recording %s", recording_id)
+            logger.exception(
+                "stage_failed",
+                stage=SPEECH_STAGE,
+                recording_id=recording_id,
+                duration_ms=_elapsed_ms(start),
+            )
             raise
 
-    logger.info("speech stage done for recording %s: %d segments", recording_id, len(segments))
+    logger.info(
+        "stage_done",
+        stage=SPEECH_STAGE,
+        recording_id=recording_id,
+        duration_ms=_elapsed_ms(start),
+        segments=len(segments),
+    )
     enqueue_next(recording_id)
 
 
@@ -85,10 +107,11 @@ def run_nlp_stage(
     enqueue_next: Callable[[str], None],
 ) -> None:
     rid = uuid.UUID(recording_id)
+    start = time.perf_counter()
     with session_factory() as session:
         recording = session.get(Recording, rid)
         if recording is None:
-            logger.warning("recording %s not found; dropping task", recording_id)
+            logger.warning("recording_missing", recording_id=recording_id)
             return
 
         stage = FILTER_STAGE
@@ -115,10 +138,7 @@ def run_nlp_stage(
             kept = [s for s in segments if not s.discarded]
             if not kept:
                 # Better to extract from everything than to lose the recording.
-                logger.warning(
-                    "all segments discarded for recording %s; extracting from full transcript",
-                    recording_id,
-                )
+                logger.warning("all_segments_discarded", recording_id=recording_id)
                 kept = segments
             extraction = nlp.extract("\n".join(s.text for s in kept))
 
@@ -144,13 +164,100 @@ def run_nlp_stage(
             recording.failure_stage = stage
             session.commit()
             # No health data in logs: IDs only (docs/BACKEND.md §8)
-            logger.exception("NLP stage (%s) failed for recording %s", stage, recording_id)
+            logger.exception(
+                "stage_failed",
+                stage=stage,
+                recording_id=recording_id,
+                duration_ms=_elapsed_ms(start),
+            )
             raise
 
     logger.info(
-        "NLP stage done for recording %s: %d/%d segments kept",
-        recording_id,
-        len(kept),
-        len(segments),
+        "stage_done",
+        stage=EXTRACT_STAGE,
+        recording_id=recording_id,
+        duration_ms=_elapsed_ms(start),
+        segments_kept=len(kept),
+        segments_total=len(segments),
     )
     enqueue_next(recording_id)
+
+
+def run_assessment_stage(
+    recording_id: str,
+    *,
+    session_factory: sessionmaker[Session],
+    assessor: Assessor,
+) -> None:
+    rid = uuid.UUID(recording_id)
+    start = time.perf_counter()
+    with session_factory() as session:
+        recording = session.get(Recording, rid)
+        if recording is None:
+            logger.warning("recording_missing", recording_id=recording_id)
+            return
+
+        recording.status = RecordingStatus.ASSESSING
+        session.commit()
+
+        try:
+            extraction = session.scalars(
+                select(Extraction).where(Extraction.recording_id == rid)
+            ).one_or_none()
+            if extraction is None:
+                raise AssessmentError("no extraction to assess")
+
+            kept = session.scalars(
+                select(TranscriptSegment)
+                .where(TranscriptSegment.recording_id == rid)
+                .where(TranscriptSegment.discarded.is_(False))
+                .order_by(TranscriptSegment.segment_index)
+            ).all()
+            case = CaseSummary(
+                symptoms=list((extraction.symptoms or {}).get("items", [])),
+                age=extraction.age,
+                gender=extraction.gender,
+                location=extraction.location,
+                duration_days=extraction.duration_days,
+                severity=extraction.severity,
+                transcript="\n".join(s.text for s in kept),
+            )
+            result = assessor.assess(case)
+
+            # Idempotent on retry: replace any assessment from a previous attempt.
+            session.execute(delete(Assessment).where(Assessment.recording_id == rid))
+            session.add(
+                Assessment(
+                    recording_id=rid,
+                    conditions=[c.model_dump() for c in result.conditions],
+                    red_flags=[f.model_dump() for f in result.red_flags],
+                    otc_guidance=[o.model_dump() for o in result.otc_guidance],
+                    model_id=assessor.model_id,
+                    prompt_version=PROMPT_VERSION,
+                    raw_llm_output=result.raw,
+                )
+            )
+            recording.status = RecordingStatus.COMPLETED
+            session.commit()
+        except Exception:
+            session.rollback()
+            recording.status = RecordingStatus.FAILED
+            recording.failure_stage = ASSESS_STAGE
+            session.commit()
+            # No health data in logs: IDs only (docs/BACKEND.md §8)
+            logger.exception(
+                "stage_failed",
+                stage=ASSESS_STAGE,
+                recording_id=recording_id,
+                duration_ms=_elapsed_ms(start),
+            )
+            raise
+
+    logger.info(
+        "stage_done",
+        stage=ASSESS_STAGE,
+        recording_id=recording_id,
+        duration_ms=_elapsed_ms(start),
+        conditions=len(result.conditions),
+        red_flags=len(result.red_flags),
+    )

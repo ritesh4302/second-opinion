@@ -4,9 +4,10 @@
 > libraries, and the scaling best practices we follow. For product context see
 > `docs/PROJECT_DOCUMENTATION.md`; for the Android client see `docs/ANDROID_APP.md`.
 
-**Last updated:** 2026-07-18
-**Status:** Steps 1–4 implemented (skeleton + endpoints + speech worker via Sarvam Batch API
-with native diarization + NLP worker via sarvam-30b); assessment stage (step 5) is a stub
+**Last updated:** 2026-07-19
+**Status:** Steps 1–6 implemented — the pipeline runs end-to-end: upload → speech worker
+(Sarvam Batch API, native diarization) → NLP worker (sarvam-30b relevance + extraction) →
+assessment worker (sarvam-30b triage output as the interim answer to Q3)
 
 ---
 
@@ -129,7 +130,8 @@ transcripts     id, recording_id FK, speaker_label, segment_index, text,
 extractions     id, recording_id FK, symptoms (jsonb), age, gender, location,
                 duration_days, severity, raw_llm_output (jsonb)
 assessments     id, recording_id FK, conditions (jsonb: name + confidence),
-                red_flags (jsonb), otc_guidance (jsonb), model_id, prompt_version
+                red_flags (jsonb), otc_guidance (jsonb), model_id, prompt_version,
+                raw_llm_output (jsonb)
 feedback        id, assessment_id FK, decision (accepted|rejected|overridden),
                 note, created_at
 ```
@@ -190,13 +192,22 @@ How the design scales, and the rules that keep it scalable:
 
 | Signal | Tool | Notes |
 |---|---|---|
-| Structured logs | JSON logs (structlog) | `recording_id` propagated through every pipeline stage |
+| Structured logs | JSON logs (structlog) — ✅ implemented | `recording_id` propagated through every pipeline stage |
 | Metrics | Prometheus + Grafana | Queue depth, stage latency, stage failure rate, external API latency/cost |
 | Tracing | OpenTelemetry | One trace per recording across API → queue → workers → external calls |
 | Alerts | Grafana alerts | DLQ non-empty, stage p95 latency, external API error rate |
 
 The single most important debugging question — "what happened to recording X?" — must be
 answerable from logs/traces alone via `recording_id`.
+
+Implemented baseline (`app/observability.py`): one structlog `ProcessorFormatter` on the
+stdlib root logger, so structlog-native and library (uvicorn/celery/sarvamai) records all
+render identically — JSON by default, `SO_LOG_FORMAT=console` for local dev. The API logs
+an `http_request` event per request (method/path/status/duration). The worker replaces
+Celery's logging via the `setup_logging` signal and binds `recording_id` + `task_id` to
+contextvars per task (`task_prerun`/`task_postrun`), so every log line of every stage
+carries them. Pipeline stages emit `stage_done` / `stage_failed` events with `stage` and
+`duration_ms` — the log-based stand-in for metrics until Prometheus lands.
 
 ## 8. Security & Data Protection
 
@@ -235,9 +246,15 @@ users).
    sarvam-30b calls (relevance weighting, then extraction from kept segments; sarvam-m is
    deprecated), prompted JSON + Pydantic validation; raw LLM replies stored in
    `extractions.raw_llm_output` for audit
-5. Assessment stage (blocked on medical model choice — open question Q3)
+5. ~~Assessment stage~~ ✅ — `Assessor` port with a general Sarvam chat model (sarvam-30b)
+   as the POC provider: condition hypotheses + confidence, red flags, OTC-only guidance;
+   `model_id` + `prompt_version` + raw reply persisted per assessment. Q3 (dedicated
+   medical LLM) stays open — the port makes it a drop-in swap after benchmarking
 6. ~~Feedback endpoint + polling status endpoint~~ ✅ (feedback + status + assessment retrieval)
-7. Observability baseline (structured logs + queue/stage metrics)
+7. ~~Observability baseline (structured logs + queue/stage metrics)~~ ✅ — structlog JSON
+   logs across API + worker, `recording_id`/`task_id` bound per task, `stage_done` /
+   `stage_failed` events with per-stage `duration_ms` (log-based metrics; Prometheus is
+   the next build-out per §7)
 
 ## 11. Implementation Inventory (current)
 
@@ -246,35 +263,41 @@ Layout: `backend/` — uv project, Python 3.12, single package `app/` + `worker/
 | Path | Purpose |
 |---|---|
 | `backend/pyproject.toml` | Dependencies (FastAPI, SQLAlchemy 2 async, Alembic, Celery, boto3), ruff + pytest config |
-| `backend/app/main.py` | `create_app()` factory; RFC 9457 problem-details handler; router registration |
+| `backend/app/main.py` | `create_app()` factory; RFC 9457 problem-details handler; router registration; `http_request` access-log middleware |
 | `backend/app/settings.py` | `pydantic-settings`, `SO_`-prefixed env vars, working defaults for the compose stack |
+| `backend/app/observability.py` | structlog config shared by API + worker: JSON (or console) rendering for structlog and stdlib records alike |
 | `backend/app/db.py` | `Base`, lazy async engine/session factory, `get_session` dependency |
 | `backend/app/models.py` | `Recording` (client-UUID PK), `TranscriptSegment`, `Extraction`, `Assessment`, `Feedback`; `RecordingStatus` state machine (§2.2); jsonb with SQLite-compatible variant |
 | `backend/app/schemas.py` | Pydantic response/request models |
 | `backend/app/storage.py` | `ObjectStorage` port + boto3 S3/MinIO impl (offloaded via `asyncio.to_thread`) |
 | `backend/app/queue.py` | Celery factory + `enqueue` dependency; API enqueues by task name, never imports worker code |
 | `backend/app/routers/` | `health` (healthz/readyz), `recordings` (upload/status/assessment), `assessments` (feedback) |
-| `backend/worker/main.py` | Celery worker entrypoint; speech + NLP stage tasks, assessment stub (step 5) |
+| `backend/worker/main.py` | Celery worker entrypoint; speech + NLP + assessment stage tasks; structlog setup + per-task `recording_id` context binding |
 | `backend/worker/transcription.py` | `Transcriber` port; `SarvamTranscriber` (Batch API, `with_diarization=True`) + `FakeTranscriber` (dev/demo, `SO_SPEECH_PROVIDER=fake`) |
 | `backend/worker/nlp.py` | `NlpModel` port; `SarvamNlp` (sarvam-30b chat, prompted-JSON + Pydantic validation) + `FakeNlp` (`SO_NLP_PROVIDER=fake`); relevance + extraction prompts |
-| `backend/worker/pipeline.py` | `run_speech_stage` (S3 download → transcribe → segments, `transcribing` → `filtering`) + `run_nlp_stage` (relevance weights/discard flags → `extracting` → Extraction row → `assessing`); replace-on-retry persistence, failures set `failed` + stage |
+| `backend/worker/assessment.py` | `Assessor` port; `SarvamAssessor` (triage prompt: conditions + confidence, red flags, OTC-only — no Schedule H/H1) + `FakeAssessor` (`SO_ASSESSMENT_PROVIDER=fake`); `PROMPT_VERSION` recorded per assessment |
+| `backend/worker/pipeline.py` | `run_speech_stage` (S3 download → transcribe → segments, `transcribing` → `filtering`) + `run_nlp_stage` (relevance weights/discard flags → `extracting` → Extraction row → `assessing`) + `run_assessment_stage` (extraction + kept transcript → Assessment row → `completed`); replace-on-retry persistence, failures set `failed` + stage; structured `stage_done`/`stage_failed` events with `duration_ms` |
 | `backend/worker/db.py` | Sync SQLAlchemy session for Celery tasks (psycopg driver on the same DB) |
 | `backend/alembic/` | Async migrations; URL from settings; initial schema revision applied |
-| `backend/tests/` | 27 pytest tests: API (fakes for storage/queue, httpx `ASGITransport`) + speech/NLP worker stage tests (sync SQLite, stub transcriber/NLP, Sarvam + LLM-JSON parsers) |
+| `backend/tests/` | 32 pytest tests: API (fakes for storage/queue, httpx `ASGITransport`) + speech/NLP/assessment worker stage tests (sync SQLite, stub providers, Sarvam + LLM-JSON parsers) |
 | `backend/docker-compose.yml` | api + worker + Postgres 16 + Redis 7 + MinIO (host ports 9100/9101) + bucket init; api runs `alembic upgrade head` on start |
 | `.github/workflows/backend.yml` | CI: ruff check/format + pytest + Docker image build |
 
 Verified end-to-end on the compose stack (fake providers): upload → 202 + MinIO object →
 speech stage → diarized segments → NLP stage → relevance weights + discard flags on
 `transcripts`, `extractions` row (symptoms/duration/severity + raw LLM audit payload) →
-status `assessing` → assessment stub task received; idempotent re-upload returns 200.
+assessment stage → `assessments` row → status `completed`; idempotent re-upload returns 200.
 
 Also verified against the **real Sarvam APIs** (`SO_SPEECH_PROVIDER=sarvam` /
-`SO_NLP_PROVIDER=sarvam` + `SO_SARVAM_API_KEY`; compose defaults to `fake`) with a
-synthesized two-voice Hindi pharmacy exchange: Saaras v3 transcribed and separated the
-speakers correctly, and sarvam-30b identified the patient speaker and extracted symptoms,
-age, and duration accurately. Note: Sarvam chat models are reasoning models — requests set
-`reasoning_effort="low"` and `max_tokens=4096`, or the budget is consumed before the reply.
+`SO_NLP_PROVIDER=sarvam` / `SO_ASSESSMENT_PROVIDER=sarvam` + `SO_SARVAM_API_KEY`; compose
+defaults to `fake`) with a synthesized two-voice Hindi pharmacy exchange: Saaras v3
+transcribed and separated the speakers correctly, sarvam-30b identified the patient speaker
+and extracted symptoms/age/duration accurately, and the assessment stage returned plausible
+condition hypotheses with confidence plus OTC guidance, served via
+`GET /v1/recordings/{id}/assessment`. Note: Sarvam chat models are reasoning models —
+requests set `reasoning_effort="low"` and `max_tokens=4096`, or the budget is consumed
+before the reply. Known gap: the prompt forbids Schedule H/H1 drugs but a hard OTC
+blocklist (Phase 3 roadmap item) is not yet enforced in code.
 
 ## 12. Related Documents
 
