@@ -390,7 +390,10 @@ def test_parse_llm_json_rejects_non_json():
 ASSESSMENT = AssessmentResult(
     conditions=[ConditionHypothesis(name="Viral fever", confidence_percent=70, rationale="ok")],
     red_flags=[RedFlag(description="fever > 3 days", action="refer to doctor")],
-    otc_guidance=[OtcAdvice(medicine="Paracetamol 500 mg", dosage="1 tab q6h", note="after food")],
+    otc_guidance=[
+        OtcAdvice(medicine="Paracetamol 500 mg", dosage="1 tab q6h", note="after food"),
+        OtcAdvice(medicine="Azithromycin 500 mg", note="needs prescription", prescription=True),
+    ],
     raw={"conditions": []},
 )
 
@@ -460,6 +463,9 @@ def test_assessment_stage_persists_assessment_and_completes(sync_session_factory
         ]
         assert row.red_flags == [{"description": "fever > 3 days", "action": "refer to doctor"}]
         assert row.otc_guidance[0]["medicine"] == "Paracetamol 500 mg"
+        # Prescription drugs are shown with a label, not blocked (requirement change).
+        assert row.otc_guidance[0]["prescription"] is False
+        assert row.otc_guidance[1]["prescription"] is True
         assert row.model_id == "stub-model"
         assert row.prompt_version == PROMPT_VERSION
         assert row.raw_llm_output == {"conditions": []}

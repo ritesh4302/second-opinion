@@ -109,7 +109,7 @@ Rules:
 |---|---|---|
 | `POST` | `/v1/recordings` | Multipart upload: audio + metadata (client UUID, duration, locale, optional patient context). Returns `202` + job id |
 | `GET` | `/v1/recordings/{id}` | Pipeline status + stage |
-| `GET` | `/v1/recordings/{id}/assessment` | Final assessment: condition categories + confidence, red flags, OTC guidance, disclaimer |
+| `GET` | `/v1/recordings/{id}/assessment` | Final assessment: condition categories + confidence, red flags, medicine guidance (prescription drugs labeled), disclaimer |
 | `POST` | `/v1/assessments/{id}/feedback` | Pharmacist decision: accepted / rejected / overridden + optional note |
 | `GET` | `/healthz`, `/readyz` | Liveness/readiness probes |
 
@@ -247,7 +247,8 @@ users).
    deprecated), prompted JSON + Pydantic validation; raw LLM replies stored in
    `extractions.raw_llm_output` for audit
 5. ~~Assessment stage~~ ✅ — `Assessor` port with a general Sarvam chat model (sarvam-30b)
-   as the POC provider: condition hypotheses + confidence, red flags, OTC-only guidance;
+   as the POC provider: condition hypotheses + confidence, red flags, medicine guidance
+   (OTC preferred; prescription drugs labeled, see §11 note);
    `model_id` + `prompt_version` + raw reply persisted per assessment. Q3 (dedicated
    medical LLM) stays open — the port makes it a drop-in swap after benchmarking
 6. ~~Feedback endpoint + polling status endpoint~~ ✅ (feedback + status + assessment retrieval)
@@ -275,7 +276,7 @@ Layout: `backend/` — uv project, Python 3.12, single package `app/` + `worker/
 | `backend/worker/main.py` | Celery worker entrypoint; speech + NLP + assessment stage tasks; structlog setup + per-task `recording_id` context binding |
 | `backend/worker/transcription.py` | `Transcriber` port; `SarvamTranscriber` (Batch API, `with_diarization=True`) + `FakeTranscriber` (dev/demo, `SO_SPEECH_PROVIDER=fake`) |
 | `backend/worker/nlp.py` | `NlpModel` port; `SarvamNlp` (sarvam-30b chat, prompted-JSON + Pydantic validation) + `FakeNlp` (`SO_NLP_PROVIDER=fake`); relevance + extraction prompts |
-| `backend/worker/assessment.py` | `Assessor` port; `SarvamAssessor` (triage prompt: conditions + confidence, red flags, OTC-only — no Schedule H/H1) + `FakeAssessor` (`SO_ASSESSMENT_PROVIDER=fake`); `PROMPT_VERSION` recorded per assessment |
+| `backend/worker/assessment.py` | `Assessor` port; `SarvamAssessor` (triage prompt: conditions + confidence, red flags, medicine guidance with `prescription: true/false` per item for Schedule H/H1) + `FakeAssessor` (`SO_ASSESSMENT_PROVIDER=fake`); `PROMPT_VERSION` recorded per assessment |
 | `backend/worker/pipeline.py` | `run_speech_stage` (S3 download → transcribe → segments, `transcribing` → `filtering`) + `run_nlp_stage` (relevance weights/discard flags → `extracting` → Extraction row → `assessing`) + `run_assessment_stage` (extraction + kept transcript → Assessment row → `completed`); replace-on-retry persistence, failures set `failed` + stage; structured `stage_done`/`stage_failed` events with `duration_ms` |
 | `backend/worker/db.py` | Sync SQLAlchemy session for Celery tasks (psycopg driver on the same DB) |
 | `backend/alembic/` | Async migrations; URL from settings; initial schema revision applied |
@@ -293,11 +294,14 @@ Also verified against the **real Sarvam APIs** (`SO_SPEECH_PROVIDER=sarvam` /
 defaults to `fake`) with a synthesized two-voice Hindi pharmacy exchange: Saaras v3
 transcribed and separated the speakers correctly, sarvam-30b identified the patient speaker
 and extracted symptoms/age/duration accurately, and the assessment stage returned plausible
-condition hypotheses with confidence plus OTC guidance, served via
+condition hypotheses with confidence plus medicine guidance, served via
 `GET /v1/recordings/{id}/assessment`. Note: Sarvam chat models are reasoning models —
 requests set `reasoning_effort="low"` and `max_tokens=4096`, or the budget is consumed
-before the reply. Known gap: the prompt forbids Schedule H/H1 drugs but a hard OTC
-blocklist (Phase 3 roadmap item) is not yet enforced in code.
+before the reply. Requirement change: prescription (Schedule H/H1) medicines are no
+longer blocked — guidance items carry a model-declared `prescription: true/false` flag
+that the app renders as a "prescription drug" label. Known gap: label correctness relies
+on the prompt (no code-side schedule lookup), so mislabels are possible until an
+evaluation set exists.
 
 ## 12. Related Documents
 

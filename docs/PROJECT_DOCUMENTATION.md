@@ -28,7 +28,9 @@ it into a structured symptom summary, and returns:
 
 1. **Preliminary assessment** — possible condition categories with confidence levels
    (explicitly *not* a definitive diagnosis)
-2. **OTC-only guidance** — never scheduled (Schedule H/H1) drugs
+2. **Medicine guidance** — OTC preferred; prescription (Schedule H/H1) medicines may be
+   suggested but always carry a clear "prescription drug" label (requirement change: was
+   OTC-only with a hard blocklist)
 3. **Red-flag escalation** — a prominent "refer to doctor" path for danger signs
    (e.g., chest pain, infant fever, breathing difficulty)
 
@@ -171,7 +173,9 @@ Android app + backend skeleton (Phase 2 started).
 
 ### Phase 3 — Assessment & decision support
 - [x] Medical AI model integration → assessment + confidence + red flags (interim: sarvam-30b behind the `Assessor` port; dedicated medical LLM pending Q3 benchmark)
-- [ ] OTC-only guidance layer with hard blocklist of scheduled drugs
+- [x] Prescription-drug labeling (requirement change: no hard blocklist) — guidance items
+  carry `prescription: true/false` from the assessment stage
+- [ ] "Prescription drug" label rendering in the app UI
 - [ ] Red-flag referral escalation UI
 - [ ] Pharmacist accept/reject/override capture (feedback loop)
 

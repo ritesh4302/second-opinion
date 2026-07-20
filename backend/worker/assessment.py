@@ -1,11 +1,13 @@
 """Assessment stage port + providers (build-order step 5).
 
 Turns the structured extraction + kept transcript into a preliminary triage
-assessment: condition hypotheses with confidence, red flags, and OTC-only
-guidance (docs/PROJECT_DOCUMENTATION.md §2 — never a diagnosis; the
-pharmacist decides). Q3 (dedicated medical LLM) stays open: the POC uses a
-Sarvam chat model behind the `Assessor` port so a medical model can be
-swapped in per benchmark results without touching pipeline orchestration.
+assessment: condition hypotheses with confidence, red flags, and medicine
+guidance — OTC preferred, prescription (Schedule H/H1) medicines allowed but
+labeled `prescription: true` (docs/PROJECT_DOCUMENTATION.md §2 — never a
+diagnosis; the pharmacist decides). Q3 (dedicated medical LLM) stays open:
+the POC uses a Sarvam chat model behind the `Assessor` port so a medical
+model can be swapped in per benchmark results without touching pipeline
+orchestration.
 """
 
 import logging
@@ -22,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 # Bump whenever the system prompt changes; persisted on every assessment row
 # for reproducibility and evaluation (docs/BACKEND.md §4).
-PROMPT_VERSION = "assess-v1"
+PROMPT_VERSION = "assess-v3"
 
 
 @dataclass(frozen=True)
@@ -62,6 +64,9 @@ class OtcAdvice(BaseModel):
     medicine: str
     dosage: str = ""
     note: str = ""
+    # Prescription (Schedule H/H1) medicines are shown, not blocked; the app
+    # renders this as a "prescription drug" label next to the advice.
+    prescription: bool = False
 
 
 class AssessmentResult(BaseModel):
@@ -82,18 +87,24 @@ class Assessor(Protocol):
 _ASSESSMENT_SYSTEM = (
     "You are a triage decision-support assistant for a licensed pharmacist "
     "in India. You never diagnose or prescribe: you list possible condition "
-    "categories with confidence, danger signs needing a doctor, and "
-    "over-the-counter guidance only. Never suggest Schedule H/H1 or "
-    "prescription-only drugs (no antibiotics, steroids, opioids, "
-    "benzodiazepines). If danger signs are present (e.g. chest pain, "
-    "breathing difficulty, infant fever, blood in stool/vomit), list them as "
-    "red flags with a clear refer-to-doctor action. Reply in English, JSON "
-    "only:\n"
+    "categories with confidence, danger signs needing a doctor, and medicine "
+    "guidance. Prefer over-the-counter medicines; you may include Schedule "
+    "H/H1 or prescription-only medicines when clearly warranted, but mark "
+    'each of those with "prescription": true and say in the note that it '
+    "requires a doctor's prescription. Label by India's drug schedules: "
+    "paracetamol, ibuprofen, ORS, cetirizine, antacids and similar OTC "
+    'medicines are "prescription": false; antibiotics (e.g. azithromycin, '
+    "amoxicillin), corticosteroids and other Schedule H/H1 medicines are "
+    '"prescription": true. If danger signs are present (e.g. chest pain, '
+    "breathing difficulty, infant fever, blood in stool/vomit), list them "
+    "as red flags with a clear refer-to-doctor action. Write every value "
+    "in English, JSON only:\n"
     '{"conditions": [{"name": "<condition category>", '
     '"confidence_percent": <0-100>, "rationale": "<one sentence>"}], '
     '"red_flags": [{"description": "<danger sign>", "action": "<referral advice>"}], '
-    '"otc_guidance": [{"medicine": "<OTC medicine>", "dosage": "<adult-adjusted dosage>", '
-    '"note": "<caution>"}]}\n'
+    '"otc_guidance": [{"medicine": "<medicine>", "dosage": "<adult-adjusted dosage>", '
+    '"note": "<caution>", "prescription": <true if Schedule H/H1 or '
+    "prescription-only, else false>}]}\n"
     "Use empty lists when nothing applies; never invent symptoms."
 )
 
@@ -168,7 +179,13 @@ class FakeAssessor:
                     medicine="Paracetamol 500 mg",
                     dosage="1 tablet every 6 hours after food",
                     note="Refer to a doctor if fever persists beyond 3 days.",
-                )
+                ),
+                OtcAdvice(
+                    medicine="Azithromycin 500 mg",
+                    dosage="1 tablet daily for 3 days",
+                    note="Schedule H — requires a doctor's prescription.",
+                    prescription=True,
+                ),
             ],
         )
 
