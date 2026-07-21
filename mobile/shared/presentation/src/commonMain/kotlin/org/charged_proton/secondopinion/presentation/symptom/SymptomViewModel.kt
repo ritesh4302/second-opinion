@@ -13,7 +13,9 @@ import org.charged_proton.secondopinion.domain.usecase.StartRecordingUseCase
 import org.charged_proton.secondopinion.domain.usecase.StopRecordingUseCase
 
 /**
- * Holds the state of the symptom-capture screen. Permission checks stay in the
+ * Holds the state of the symptom-capture screen. Recording starts with a
+ * tap-to-confirm patient-consent step ([onRecordRequested] →
+ * [onConsentConfirmed]/[onConsentDeclined]). Permission checks stay in the
  * UI layer; the UI calls [onPermissionDenied] when the microphone permission
  * is refused. On stop, the recording becomes a [SymptomUiState.lastCaseId]
  * the UI can submit for assessment.
@@ -29,6 +31,22 @@ class SymptomViewModel(
     val uiState: StateFlow<SymptomUiState> = _uiState.asStateFlow()
 
     private var isStopping = false
+
+    /** Speak tapped: ask for patient consent before anything records. */
+    fun onRecordRequested() {
+        _uiState.update { it.copy(awaitingConsent = true) }
+    }
+
+    /** Consent confirmed; the UI proceeds with the permission check + start. */
+    fun onConsentConfirmed() {
+        _uiState.update { it.copy(awaitingConsent = false) }
+    }
+
+    fun onConsentDeclined() {
+        _uiState.update {
+            it.copy(awaitingConsent = false, status = SymptomStatus.CONSENT_DECLINED)
+        }
+    }
 
     fun onStartRecording() {
         startRecording()

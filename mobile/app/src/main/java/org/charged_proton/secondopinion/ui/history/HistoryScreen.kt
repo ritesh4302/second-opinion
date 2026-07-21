@@ -4,6 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -12,6 +13,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -57,17 +59,33 @@ fun HistoryScreen(
                     .fillMaxWidth()
                     .clickable { onOpenCase(case.id) },
             ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Text(
-                        text = DateFormat.getDateTimeInstance()
-                            .format(Date(case.createdAtEpochMillis)),
-                        style = MaterialTheme.typography.titleSmall,
-                    )
-                    Text(
-                        text = stringResource(case.status.toStringRes()),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = DateFormat.getDateTimeInstance()
+                                .format(Date(case.createdAtEpochMillis)),
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        Text(
+                            text = stringResource(case.status.toStringRes()),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    TextButton(onClick = { viewModel.onTogglePlayback(case) }) {
+                        Text(
+                            text = stringResource(
+                                if (case.id == uiState.playingCaseId) {
+                                    R.string.stop_playback
+                                } else {
+                                    R.string.play_recording
+                                }
+                            )
+                        )
+                    }
                 }
             }
         }

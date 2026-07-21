@@ -11,10 +11,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -61,10 +63,10 @@ fun RecordScreen(
     ) {
         Button(
             onClick = {
-                when {
-                    uiState.isRecording -> viewModel.onStopRecording()
-                    hasAudioPermission() -> viewModel.onStartRecording()
-                    else -> permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                if (uiState.isRecording) {
+                    viewModel.onStopRecording()
+                } else {
+                    viewModel.onRecordRequested()
                 }
             },
             modifier = Modifier.fillMaxWidth()
@@ -104,6 +106,33 @@ fun RecordScreen(
             Text(text = stringResource(R.string.view_history))
         }
     }
+
+    if (uiState.awaitingConsent) {
+        AlertDialog(
+            onDismissRequest = viewModel::onConsentDeclined,
+            title = { Text(text = stringResource(R.string.consent_title)) },
+            text = { Text(text = stringResource(R.string.consent_body)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.onConsentConfirmed()
+                        if (hasAudioPermission()) {
+                            viewModel.onStartRecording()
+                        } else {
+                            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        }
+                    }
+                ) {
+                    Text(text = stringResource(R.string.consent_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::onConsentDeclined) {
+                    Text(text = stringResource(R.string.consent_decline))
+                }
+            },
+        )
+    }
 }
 
 private fun SymptomStatus.toStringRes(): Int = when (this) {
@@ -111,5 +140,6 @@ private fun SymptomStatus.toStringRes(): Int = when (this) {
     SymptomStatus.RECORDING -> R.string.status_recording
     SymptomStatus.SAVED -> R.string.status_saved
     SymptomStatus.PERMISSION_REQUIRED -> R.string.status_permission_required
+    SymptomStatus.CONSENT_DECLINED -> R.string.status_consent_declined
     SymptomStatus.ERROR -> R.string.status_error
 }

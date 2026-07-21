@@ -17,6 +17,7 @@ import org.charged_proton.secondopinion.testutil.FakeAudioRecorder
 import org.charged_proton.secondopinion.testutil.FakeCaseRepository
 import org.charged_proton.secondopinion.ui.theme.SecondOpinionTheme
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -24,8 +25,8 @@ import org.junit.Test
 
 /**
  * Compose UI tests for the critical record-screen flows (ANDROID_APP.md §9):
- * Speak/Stop toggle and permission-denied messaging. Uses a fake recorder and
- * case store so no microphone or Koin graph is involved.
+ * consent step, Speak/Stop toggle, and permission-denied messaging. Uses a
+ * fake recorder and case store so no microphone or Koin graph is involved.
  */
 class RecordScreenTest {
 
@@ -64,6 +65,12 @@ class RecordScreenTest {
         }
     }
 
+    /** Taps Speak and confirms the consent dialog so recording starts. */
+    private fun startRecordingWithConsent() {
+        composeRule.onNodeWithText(string(R.string.speak)).performClick()
+        composeRule.onNodeWithText(string(R.string.consent_confirm)).performClick()
+    }
+
     @Test
     fun initialState_showsSpeakButtonAndIdlePrompt() {
         composeRule.onNodeWithText(string(R.string.speak)).assertIsDisplayed()
@@ -71,8 +78,28 @@ class RecordScreenTest {
     }
 
     @Test
-    fun tapSpeak_togglesToStopWithRecordingStatus() {
+    fun tapSpeak_showsConsentDialogWithoutRecording() {
         composeRule.onNodeWithText(string(R.string.speak)).performClick()
+
+        composeRule.onNodeWithText(string(R.string.consent_title)).assertIsDisplayed()
+        composeRule.onNodeWithText(string(R.string.consent_body)).assertIsDisplayed()
+        assertFalse(recorder.isRecording)
+    }
+
+    @Test
+    fun decliningConsent_cancelsAndExplains() {
+        composeRule.onNodeWithText(string(R.string.speak)).performClick()
+
+        composeRule.onNodeWithText(string(R.string.consent_decline)).performClick()
+
+        composeRule.onNodeWithText(string(R.string.status_consent_declined)).assertIsDisplayed()
+        composeRule.onNodeWithText(string(R.string.speak)).assertIsDisplayed()
+        assertFalse(recorder.isRecording)
+    }
+
+    @Test
+    fun confirmingConsent_togglesToStopWithRecordingStatus() {
+        startRecordingWithConsent()
 
         composeRule.onNodeWithText(string(R.string.stop)).assertIsDisplayed()
         composeRule.onNodeWithText(string(R.string.status_recording)).assertIsDisplayed()
@@ -81,7 +108,7 @@ class RecordScreenTest {
 
     @Test
     fun tapStop_savesRecordingAndOffersAssessment() {
-        composeRule.onNodeWithText(string(R.string.speak)).performClick()
+        startRecordingWithConsent()
 
         composeRule.onNodeWithText(string(R.string.stop)).performClick()
 
@@ -93,7 +120,7 @@ class RecordScreenTest {
 
     @Test
     fun tapGetAssessment_navigatesWithCreatedCaseId() {
-        composeRule.onNodeWithText(string(R.string.speak)).performClick()
+        startRecordingWithConsent()
         composeRule.onNodeWithText(string(R.string.stop)).performClick()
 
         composeRule.onNodeWithText(string(R.string.get_assessment)).performClick()

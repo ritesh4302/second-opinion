@@ -183,6 +183,40 @@ class SymptomViewModelTest {
     }
 
     @Test
+    fun recordRequested_showsConsentStepWithoutRecording() {
+        val vm = viewModel()
+
+        vm.onRecordRequested()
+
+        assertTrue(vm.uiState.value.awaitingConsent)
+        assertFalse(vm.uiState.value.isRecording)
+        assertFalse(recorder.isRecording)
+    }
+
+    @Test
+    fun consentConfirmed_clearsConsentStep() {
+        val vm = viewModel()
+        vm.onRecordRequested()
+
+        vm.onConsentConfirmed()
+
+        assertFalse(vm.uiState.value.awaitingConsent)
+    }
+
+    @Test
+    fun consentDeclined_setsConsentDeclinedStatusWithoutRecording() {
+        val vm = viewModel()
+        vm.onRecordRequested()
+
+        vm.onConsentDeclined()
+
+        val state = vm.uiState.value
+        assertFalse(state.awaitingConsent)
+        assertEquals(SymptomStatus.CONSENT_DECLINED, state.status)
+        assertFalse(recorder.isRecording)
+    }
+
+    @Test
     fun clearingViewModel_releasesRecorder() {
         val store = ViewModelStore()
         store.put("vm", viewModel())

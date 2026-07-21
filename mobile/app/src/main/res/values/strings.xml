@@ -6,11 +6,19 @@
     <string name="status_recording">Recording… describe your symptoms</string>
     <string name="status_saved">Recording saved. Press Speak to record again.</string>
     <string name="status_permission_required">Microphone permission is required to record symptoms</string>
+    <string name="status_consent_declined">Recording cancelled — patient consent is required</string>
     <string name="status_error">Something went wrong. Please try again.</string>
+
+    <string name="consent_title">Patient consent</string>
+    <string name="consent_body">Confirm the patient agrees to this conversation being recorded and processed for AI-assisted triage support.</string>
+    <string name="consent_confirm">Patient agrees</string>
+    <string name="consent_decline">Cancel</string>
 
     <string name="get_assessment">Get assessment</string>
     <string name="view_history">View history</string>
     <string name="history_empty">No cases yet. Record symptoms to create one.</string>
+    <string name="play_recording">Play</string>
+    <string name="stop_playback">Stop</string>
 
     <string name="assessment_in_progress">Analyzing… %1$s</string>
     <string name="section_summary">Symptom summary</string>

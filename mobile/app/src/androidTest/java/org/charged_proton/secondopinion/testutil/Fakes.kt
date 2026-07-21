@@ -13,6 +13,7 @@ import org.charged_proton.secondopinion.domain.model.OtcAdvice
 import org.charged_proton.secondopinion.domain.model.Recording
 import org.charged_proton.secondopinion.domain.model.RedFlag
 import org.charged_proton.secondopinion.domain.model.SymptomCase
+import org.charged_proton.secondopinion.domain.platform.AudioPlayer
 import org.charged_proton.secondopinion.domain.platform.AudioRecorder
 import org.charged_proton.secondopinion.domain.repository.AssessmentRepository
 import org.charged_proton.secondopinion.domain.repository.CaseRepository
@@ -62,6 +63,22 @@ class FakeAudioRecorder : AudioRecorder {
     override fun release() {
         releaseCalls++
         isRecording = false
+    }
+}
+
+class FakeAudioPlayer : AudioPlayer {
+    val playedFilePaths = mutableListOf<String>()
+    var stopCalls = 0
+    private var onCompleted: (() -> Unit)? = null
+
+    override fun play(filePath: String, onCompleted: () -> Unit) {
+        playedFilePaths += filePath
+        this.onCompleted = onCompleted
+    }
+
+    override fun stop() {
+        stopCalls++
+        onCompleted = null
     }
 }
 

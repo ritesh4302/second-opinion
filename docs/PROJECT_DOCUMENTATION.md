@@ -147,22 +147,22 @@ Android app wired to the backend pipeline end-to-end.
 |---|---|
 | Project | Kotlin Multiplatform (KMM), layer-per-module: `:app` (Compose UI) + `:shared:domain` / `:shared:data` / `:shared:presentation`; Material3, dynamic color; minSdk 29, targetSdk 37 |
 | Package | `org.charged_proton.secondopinion` |
-| UI flow | Record (Speak/Stop + runtime permission) → assessment (pipeline progress, referral banner on red flags, prescription-labeled guidance, pharmacist accept/reject/override) → history; Navigation Compose |
+| UI flow | Record (patient-consent dialog → Speak/Stop + runtime permission) → assessment (pipeline progress, referral banner on red flags, prescription-labeled guidance, pharmacist accept/reject/override) → history (case list + recording playback); Navigation Compose |
 | Audio capture | `AudioRecord` 16 kHz mono PCM → Silero VAD silence trim (sherpa-onnx) → AAC/.m4a in app cache (see §6.3 and `docs/ANDROID_APP.md` §5.1) |
 | Data layer | `BackendAssessmentRepository` (Ktor): multipart upload → status polling → assessment fetch → feedback POST; in-memory case store (SQLDelight pending); mock repository kept for tests/demo |
 | `AndroidManifest.xml` | `RECORD_AUDIO` + `INTERNET`; debug manifest allows cleartext HTTP to the dev stack |
 | Auth / login | None — intentional for POC (D6) |
 | Backend | `backend/` FastAPI + Celery: `POST /v1/recordings` upload → MinIO + Postgres, speech worker (Sarvam Saaras v3 Batch API, native diarization), NLP worker (sarvam-30b relevance filter + structured extraction), assessment worker (sarvam-30b triage: conditions + confidence, red flags, OTC-preferred guidance with `prescription` labels; fake providers for dev), status/assessment/feedback endpoints, Alembic migrations, docker-compose dev stack (see `docs/BACKEND.md`) |
 | App ↔ backend | Wired (debug base URL `http://127.0.0.1:8000` via `adb reverse tcp:8000 tcp:8000`); verified end-to-end on emulator against the docker-compose stack incl. feedback persistence; assessment response now includes `symptom_summary` |
-| Tests | Mobile: 56 host unit tests (`commonTest`) + 17 Compose UI tests (`androidTest`); Backend: 33 pytest tests |
+| Tests | Mobile: 65 host unit tests (`commonTest`) + 21 Compose UI tests (`androidTest`); Backend: 33 pytest tests |
 
 ## 8. Roadmap
 
-### Phase 1 — Capture POC (current)
+### Phase 1 — Capture POC (complete)
 - [x] Record patient audio via Speak button with runtime permission
 - [x] Silero VAD trimming before upload
-- [ ] Recording list / playback for pharmacist verification
-- [ ] Consent capture step (tap-to-confirm) before recording
+- [x] Recording list / playback for pharmacist verification (history screen Play/Stop)
+- [x] Consent capture step (tap-to-confirm) before recording
 
 ### Phase 2 — Speech pipeline
 - [x] Backend service skeleton + audio upload endpoint
