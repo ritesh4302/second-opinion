@@ -4,10 +4,11 @@
 > libraries, and the scaling best practices we follow. For product context see
 > `docs/PROJECT_DOCUMENTATION.md`; for the Android client see `docs/ANDROID_APP.md`.
 
-**Last updated:** 2026-07-19
+**Last updated:** 2026-07-21
 **Status:** Steps 1–6 implemented — the pipeline runs end-to-end: upload → speech worker
 (Sarvam Batch API, native diarization) → NLP worker (sarvam-30b relevance + extraction) →
-assessment worker (sarvam-30b triage output as the interim answer to Q3)
+assessment worker (sarvam-30b triage output as the interim answer to Q3); the Android app
+is wired to this API (see `docs/ANDROID_APP.md` §5.2)
 
 ---
 
@@ -109,7 +110,7 @@ Rules:
 |---|---|---|
 | `POST` | `/v1/recordings` | Multipart upload: audio + metadata (client UUID, duration, locale, optional patient context). Returns `202` + job id |
 | `GET` | `/v1/recordings/{id}` | Pipeline status + stage |
-| `GET` | `/v1/recordings/{id}/assessment` | Final assessment: condition categories + confidence, red flags, medicine guidance (prescription drugs labeled), disclaimer |
+| `GET` | `/v1/recordings/{id}/assessment` | Final assessment: `symptom_summary` (comma-joined extracted symptoms), condition categories + confidence, red flags, medicine guidance (prescription drugs labeled), disclaimer |
 | `POST` | `/v1/assessments/{id}/feedback` | Pharmacist decision: accepted / rejected / overridden + optional note |
 | `GET` | `/healthz`, `/readyz` | Liveness/readiness probes |
 
@@ -269,7 +270,7 @@ Layout: `backend/` — uv project, Python 3.12, single package `app/` + `worker/
 | `backend/app/observability.py` | structlog config shared by API + worker: JSON (or console) rendering for structlog and stdlib records alike |
 | `backend/app/db.py` | `Base`, lazy async engine/session factory, `get_session` dependency |
 | `backend/app/models.py` | `Recording` (client-UUID PK), `TranscriptSegment`, `Extraction`, `Assessment`, `Feedback`; `RecordingStatus` state machine (§2.2); jsonb with SQLite-compatible variant |
-| `backend/app/schemas.py` | Pydantic response/request models |
+| `backend/app/schemas.py` | Pydantic response/request models; `AssessmentOut.symptom_summary` is derived from the `Extraction` row at read time (not stored on `assessments`) |
 | `backend/app/storage.py` | `ObjectStorage` port + boto3 S3/MinIO impl (offloaded via `asyncio.to_thread`) |
 | `backend/app/queue.py` | Celery factory + `enqueue` dependency; API enqueues by task name, never imports worker code |
 | `backend/app/routers/` | `health` (healthz/readyz), `recordings` (upload/status/assessment), `assessments` (feedback) |
@@ -280,7 +281,7 @@ Layout: `backend/` — uv project, Python 3.12, single package `app/` + `worker/
 | `backend/worker/pipeline.py` | `run_speech_stage` (S3 download → transcribe → segments, `transcribing` → `filtering`) + `run_nlp_stage` (relevance weights/discard flags → `extracting` → Extraction row → `assessing`) + `run_assessment_stage` (extraction + kept transcript → Assessment row → `completed`); replace-on-retry persistence, failures set `failed` + stage; structured `stage_done`/`stage_failed` events with `duration_ms` |
 | `backend/worker/db.py` | Sync SQLAlchemy session for Celery tasks (psycopg driver on the same DB) |
 | `backend/alembic/` | Async migrations; URL from settings; initial schema revision applied |
-| `backend/tests/` | 32 pytest tests: API (fakes for storage/queue, httpx `ASGITransport`) + speech/NLP/assessment worker stage tests (sync SQLite, stub providers, Sarvam + LLM-JSON parsers) |
+| `backend/tests/` | 33 pytest tests: API (fakes for storage/queue, httpx `ASGITransport`) + speech/NLP/assessment worker stage tests (sync SQLite, stub providers, Sarvam + LLM-JSON parsers) |
 | `backend/docker-compose.yml` | api + worker + Postgres 16 + Redis 7 + MinIO (host ports 9100/9101) + bucket init; api runs `alembic upgrade head` on start |
 | `.github/workflows/backend.yml` | CI: ruff check/format + pytest + Docker image build |
 
