@@ -3,11 +3,12 @@ import uuid
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models import Assessment, Recording, RecordingStatus
+from app.models import Assessment, Extraction, Recording, RecordingStatus
 
 
 async def seed_completed_recording(
     session_factory: async_sessionmaker[AsyncSession],
+    with_extraction: bool = False,
 ) -> tuple[uuid.UUID, uuid.UUID]:
     recording_id = uuid.uuid4()
     assessment_id = uuid.uuid4()
@@ -21,6 +22,13 @@ async def seed_completed_recording(
                 status=RecordingStatus.COMPLETED,
             )
         )
+        if with_extraction:
+            session.add(
+                Extraction(
+                    recording_id=recording_id,
+                    symptoms={"items": ["fever", "headache"]},
+                )
+            )
         session.add(
             Assessment(
                 id=assessment_id,
@@ -44,6 +52,17 @@ async def test_get_assessment_when_completed(client: AsyncClient, session_factor
     body = response.json()
     assert body["id"] == str(assessment_id)
     assert body["conditions"] == [{"name": "viral URI", "confidence": 0.72}]
+    assert body["symptom_summary"] == ""
+
+
+async def test_get_assessment_includes_symptom_summary(
+    client: AsyncClient, session_factory
+) -> None:
+    recording_id, _ = await seed_completed_recording(session_factory, with_extraction=True)
+
+    response = await client.get(f"/v1/recordings/{recording_id}/assessment")
+    assert response.status_code == 200
+    assert response.json()["symptom_summary"] == "fever, headache"
 
 
 async def test_get_assessment_before_ready_is_404(client: AsyncClient) -> None:

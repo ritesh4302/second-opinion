@@ -9,4 +9,6 @@ package org.charged_proton.secondopinion.domain.model
 data class Recording(
     val filePath: String,
     val createdAtEpochMillis: Long,
+    /** Speech duration after VAD trimming; upload metadata for the backend. */
+    val durationMillis: Long = 0,
 )

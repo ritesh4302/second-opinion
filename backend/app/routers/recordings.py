@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
-from app.models import Assessment, Recording, RecordingStatus
+from app.models import Assessment, Extraction, Recording, RecordingStatus
 from app.problems import Problem
 from app.queue import get_enqueue
 from app.schemas import AssessmentOut, RecordingOut
@@ -76,7 +76,7 @@ async def get_recording(
 async def get_assessment(
     recording_id: uuid.UUID,
     session: SessionDep,
-) -> Assessment:
+) -> AssessmentOut:
     recording = await session.get(Recording, recording_id)
     if recording is None:
         raise Problem(404, "Not found", f"recording {recording_id} does not exist")
@@ -88,4 +88,10 @@ async def get_assessment(
         raise Problem(
             404, "Assessment not ready", f"recording {recording_id} has no assessment yet"
         )
-    return assessment
+    extraction = (
+        await session.execute(select(Extraction).where(Extraction.recording_id == recording_id))
+    ).scalar_one_or_none()
+    symptoms = extraction.symptoms.get("items", []) if extraction is not None else []
+    out = AssessmentOut.model_validate(assessment)
+    out.symptom_summary = ", ".join(symptoms)
+    return out

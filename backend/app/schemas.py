@@ -23,6 +23,8 @@ class AssessmentOut(BaseModel):
 
     id: uuid.UUID
     recording_id: uuid.UUID
+    # Short recap of the extracted symptoms so the app can show what was heard
+    symptom_summary: str = ""
     conditions: list
     red_flags: list
     otc_guidance: list

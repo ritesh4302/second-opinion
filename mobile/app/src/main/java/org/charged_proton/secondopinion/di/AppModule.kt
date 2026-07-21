@@ -1,9 +1,13 @@
 package org.charged_proton.secondopinion.di
 
+import org.charged_proton.secondopinion.BuildConfig
 import org.charged_proton.secondopinion.data.audio.SileroVadTrimmer
+import org.charged_proton.secondopinion.data.platform.AndroidAudioFileReader
+import org.charged_proton.secondopinion.data.platform.AudioFileReader
 import org.charged_proton.secondopinion.data.recorder.VadTrimmingAudioRecorder
+import org.charged_proton.secondopinion.data.remote.createBackendApi
+import org.charged_proton.secondopinion.data.repository.BackendAssessmentRepository
 import org.charged_proton.secondopinion.data.repository.InMemoryCaseRepository
-import org.charged_proton.secondopinion.data.repository.MockAssessmentRepository
 import org.charged_proton.secondopinion.domain.platform.AudioRecorder
 import org.charged_proton.secondopinion.domain.repository.AssessmentRepository
 import org.charged_proton.secondopinion.domain.repository.CaseRepository
@@ -25,11 +29,13 @@ import org.koin.core.module.dsl.viewModel
 import org.koin.dsl.module
 
 val appModule = module {
-    // Platform + data (mock implementations for now)
+    // Platform + data (in-memory case store until SQLDelight lands)
     single { SileroVadTrimmer(androidContext().assets) }
     single<AudioRecorder> { VadTrimmingAudioRecorder(androidContext(), get()) }
     single<CaseRepository> { InMemoryCaseRepository() }
-    single<AssessmentRepository> { MockAssessmentRepository(get()) }
+    single<AudioFileReader> { AndroidAudioFileReader() }
+    single { createBackendApi(BuildConfig.BACKEND_BASE_URL) }
+    single<AssessmentRepository> { BackendAssessmentRepository(get(), get(), get()) }
 
     // Use cases
     factory { StartRecordingUseCase(get()) }

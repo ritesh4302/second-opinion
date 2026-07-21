@@ -5,10 +5,11 @@
 > For product context (problem, solution, decisions D1–D6, roadmap) see
 > `docs/PROJECT_DOCUMENTATION.md`.
 
-**Last updated:** 2026-07-20
-**Status:** KMM layer-per-module; full case → assessment → decision flow on a **mock data layer**
-(in-memory repositories simulate the backend pipeline until Phase 2 lands); on-device VAD
-silence trimming (Silero via sherpa-onnx) implemented in the recording pipeline
+**Last updated:** 2026-07-21
+**Status:** KMM layer-per-module; full case → assessment → decision flow **wired to the real
+backend** (Ktor multipart upload → status polling → assessment fetch → feedback POST, verified
+end-to-end against the docker-compose stack); on-device VAD silence trimming (Silero via
+sherpa-onnx) in the recording pipeline; cases still in-memory (SQLDelight pending)
 
 ---
 
@@ -42,8 +43,8 @@ silence trimming (Silero via sherpa-onnx) implemented in the recording pipeline
 | Min/target SDK | 29 / 37 | Android 10+ |
 | Build | Gradle (Kotlin DSL) + version catalog (`gradle/libs.versions.toml`) | |
 
-> Ktor, kotlinx.serialization, Koin, and SQLDelight are **planned** — add them via the version
-> catalog when the corresponding feature is implemented, not before.
+> SQLDelight is **planned** — add it via the version catalog when persistence is implemented,
+> not before. Ktor + kotlinx.serialization landed with the backend integration.
 
 ### 2.1 Standard Library Selections (KMP-verified)
 
@@ -105,10 +106,14 @@ mobile/
     ├── data/                           # :shared:data — implements domain ports
     │   ├── src/androidMain/.../data/
     │   │   ├── audio/                  # SileroVadTrimmer (sherpa-onnx), AacM4aEncoder
+    │   │   ├── platform/AndroidAudioFileReader.kt  # reads recording bytes for upload
     │   │   └── recorder/VadTrimmingAudioRecorder.kt
     │   └── src/commonMain/.../data/
-    │       ├── mock/MockAssessmentScenarios.kt  # canned assessments incl. red-flag case
-    │       └── repository/             # InMemoryCaseRepository, MockAssessmentRepository
+    │       ├── mock/MockAssessmentScenarios.kt  # canned assessments (kept for tests/demo)
+    │       ├── platform/AudioFileReader.kt      # fun interface port for audio bytes
+    │       ├── remote/                 # BackendApi (Ktor), DTOs + mappers
+    │       └── repository/             # InMemoryCaseRepository, BackendAssessmentRepository,
+    │                                   #   MockAssessmentRepository (unused in app wiring)
     └── presentation/                   # :shared:presentation — commonMain ViewModels
         └── .../presentation/
             ├── symptom/                # SymptomViewModel + SymptomUiState (creates case on stop)
@@ -209,28 +214,34 @@ Pharmacist taps "Stop"
   → UiState(isRecording = false, lastRecording = ...)
 ```
 
-### 5.2 Case & assessment flow (implemented against mock repositories)
+### 5.2 Case & assessment flow (wired to the real backend)
 
 ```
 Recording saved (Stop)
   → CreateCaseUseCase → CaseRepository.createCase → SymptomCase(RECORDED)
+      (case id is a client-generated UUID — doubles as the backend recording id)
   → UiState.lastCaseId set → "Get assessment" button → navigate assessment/{caseId}
 AssessmentViewModel(caseId) init
-  → RequestAssessmentUseCase → AssessmentRepository.requestAssessment(caseId): Flow
-      ├─ InProgress(UPLOADING → DIARIZING → TRANSCRIBING → EXTRACTING → ASSESSING)
-      │    (mock: staged delays; case status mirrors UPLOADING/PROCESSING/COMPLETED)
-      └─ Completed(Assessment(summary, conditions, redFlags, otcGuidance, disclaimer))
+  → RequestAssessmentUseCase → BackendAssessmentRepository.requestAssessment(caseId): Flow
+      ├─ InProgress(UPLOADING)   POST /v1/recordings (multipart: id, duration_ms, locale, audio)
+      ├─ InProgress(...)         GET /v1/recordings/{id} polled every 2 s (≤ 15 min);
+      │                            backend status → PipelineStage (diarizing→DIARIZING,
+      │                            transcribing/translating→TRANSCRIBING, extracting→EXTRACTING,
+      │                            assessing→ASSESSING); case status mirrors the progress
+      └─ Completed(Assessment)   GET /v1/recordings/{id}/assessment → DTO → domain mapping
+         or Failed(reason)       pipeline failure stage / timeout / network error
   → Assessment screen renders result ("Refer to a doctor" escalation banner first when red
       flags exist; guidance items with prescription=true carry a "Prescription drug" badge)
-  → Pharmacist accepts / rejects / overrides → SubmitFeedbackUseCase → decision recorded
+  → Pharmacist accepts / rejects / overrides → SubmitFeedbackUseCase
+      → POST /v1/assessments/{id}/feedback (decision lowercased, optional note)
 HistoryScreen
   → ObserveCasesUseCase → case list (newest first) → tap → assessment/{caseId}
       (already-assessed case: Flow emits Completed immediately, decision preloaded)
 ```
 
-When Phase 2 lands, `MockAssessmentRepository` is replaced by a Ktor-backed implementation
-(multipart upload + poll) and `InMemoryCaseRepository` by SQLDelight — the domain ports,
-use cases, ViewModels, and screens stay unchanged.
+`InMemoryCaseRepository` is still the case store (SQLDelight pending) — cases and cached
+assessments vanish on process death; the domain ports, use cases, ViewModels, and screens
+were unchanged by the backend integration.
 
 ### 5.3 UiState contract (per screen)
 
@@ -255,7 +266,7 @@ sealed interface SymptomUiEvent {
 | Permission | Declared | Handling |
 |---|---|---|
 | `RECORD_AUDIO` | `AndroidManifest.xml` | Dangerous permission — requested at runtime via `rememberLauncherForActivityResult(RequestPermission())` before first recording |
-| `INTERNET` | Needed for Phase 2 upload | Add to manifest when upload is implemented |
+| `INTERNET` | `AndroidManifest.xml` | Install-time permission for the backend upload/polling; debug builds additionally allow cleartext HTTP to the dev stack via `app/src/debug/AndroidManifest.xml` (`usesCleartextTraffic`) |
 
 Permission checks are UI-layer (Android) concerns; shared code never asks for permissions — it
 receives a ready-to-use `AudioRecorder` or a failure.
@@ -265,7 +276,7 @@ receives a ready-to-use `AudioRecorder` or a failure.
 | File | Responsibility |
 |---|---|
 | `mobile/app/.../SecondOpinionApp.kt` | `Application`; starts Koin with `appModule` |
-| `mobile/app/.../di/AppModule.kt` | Koin bindings: recorder port, mock repositories (singletons), use-case factories, three ViewModels (`AssessmentViewModel` takes `caseId` via `parametersOf`) |
+| `mobile/app/.../di/AppModule.kt` | Koin bindings: recorder port, `InMemoryCaseRepository`, `BackendApi` (base URL from `BuildConfig.BACKEND_BASE_URL`) + `BackendAssessmentRepository`, use-case factories, three ViewModels (`AssessmentViewModel` takes `caseId` via `parametersOf`) |
 | `mobile/app/.../MainActivity.kt` | Sets Compose content; hosts `AppNavHost` inside `Scaffold` |
 | `mobile/app/.../ui/navigation/AppNavHost.kt` | Navigation Compose graph: `record` (start), `history`, `assessment/{caseId}` |
 | `mobile/app/.../ui/record/RecordScreen.kt` | Speak/Stop, `RECORD_AUDIO` permission, "Get assessment" (when case created), "View history" |
@@ -281,15 +292,19 @@ receives a ready-to-use `AudioRecorder` or a failure.
 | `mobile/shared/data/.../recorder/VadTrimmingAudioRecorder.kt` | `AudioRecord` impl of the port (androidMain): captures 16 kHz mono PCM on a thread; `stop()` trims silence via VAD and writes `symptom_recording_<ts>.m4a` to `cacheDir` (falls back to the full buffer when no speech detected) |
 | `mobile/shared/data/.../audio/SileroVadTrimmer.kt` | Silero VAD via sherpa-onnx: finds the padded speech range; model `silero_vad.onnx` loaded from app assets |
 | `mobile/shared/data/.../audio/AacM4aEncoder.kt` | Mono 16-bit PCM → AAC-LC/.m4a via `MediaCodec` + `MediaMuxer` |
-| `mobile/shared/data/.../repository/InMemoryCaseRepository.kt` | Mock: `StateFlow`-backed case store (newest first) |
-| `mobile/shared/data/.../repository/MockAssessmentRepository.kt` | Mock: simulates pipeline with staged delays, rotates canned scenarios, in-memory feedback store |
+| `mobile/shared/data/.../remote/BackendApi.kt` | Ktor client (`expectSuccess`, kotlinx JSON) + the four backend calls: multipart upload, recording status, assessment fetch, feedback POST; `createBackendApi(baseUrl)` used by DI (OkHttp engine on Android) |
+| `mobile/shared/data/.../remote/BackendDtos.kt` | `@Serializable` DTOs mirroring `RecordingOut`/`AssessmentOut`/`FeedbackIn` + DTO → domain mappers |
+| `mobile/shared/data/.../repository/BackendAssessmentRepository.kt` | Real `AssessmentRepository`: upload → poll (2 s interval, 15 min cap) → assessment fetch as a cold `Flow<AssessmentProgress>`; maps backend statuses to `PipelineStage`; mirrors progress into `CaseRepository`; caches assessments + feedback in memory |
+| `mobile/shared/data/.../platform/AudioFileReader.kt` (+ `AndroidAudioFileReader`) | `fun interface` port reading recording bytes for upload; Android impl reads the `.m4a` from cache |
+| `mobile/shared/data/.../repository/InMemoryCaseRepository.kt` | `StateFlow`-backed case store (newest first); UUID case ids (shared with the backend) |
+| `mobile/shared/data/.../repository/MockAssessmentRepository.kt` | Mock kept for tests/demo: simulates pipeline with staged delays, rotates canned scenarios (no longer wired in `AppModule`) |
 | `mobile/shared/data/.../mock/MockAssessmentScenarios.kt` | Three canned assessments: viral URI, gastroenteritis (incl. a prescription-labeled medicine), red-flag chest pain (no OTC, urgent referral) |
 | `mobile/shared/presentation/.../symptom/*` | `SymptomViewModel` (creates case on stop → `lastCaseId`), `SymptomUiState` + `SymptomStatus` |
 | `mobile/shared/presentation/.../assessment/*` | `AssessmentViewModel` (streams progress, loads prior decision, submits feedback), `AssessmentUiState` |
 | `mobile/shared/presentation/.../history/HistoryViewModel.kt` | `stateIn`-shared case list (`HistoryUiState`) |
 
-Known gaps (intentional — mock data layer): no networking (Ktor), no persistence (SQLDelight —
-cases vanish on process death), no auth (decision D6).
+Known gaps (intentional): no persistence (SQLDelight — cases and cached assessments vanish on
+process death), no auth (decision D6), single hardcoded locale (`hi-IN`) in the upload.
 
 ## 8. Conventions for Developers & Coding Agents
 
@@ -327,13 +342,21 @@ cd mobile
 - Launch after install:
   `adb shell monkey -p org.charged_proton.secondopinion -c android.intent.category.LAUNCHER 1`
 
+**Talking to the dev backend:** debug builds point at `http://127.0.0.1:8000`
+(`BACKEND_BASE_URL` in `app/build.gradle.kts`). Bridge the device/emulator to the
+docker-compose stack with `adb reverse tcp:8000 tcp:8000` after boot. Loopback + reverse is
+used instead of the classic `10.0.2.2` host alias because the current emulator's WiFi stack
+does not route app traffic through it reliably (shell traffic works, app sockets time out).
+
 **Testing strategy (implemented):** each shared module owns its tests in `commonTest`
-(48 tests total, run on the JVM via the AGP-KMP `withHostTest {}` DSL):
+(56 tests total, run on the JVM via the AGP-KMP `withHostTest {}` DSL):
 - `:shared:domain` `commonTest` — all 10 use cases against hand-written fakes of the three
   ports (`testutil/Fakes.kt`); verifies `Result` wrapping and delegation (15 tests)
-- `:shared:data` `commonTest` — `InMemoryCaseRepository` (Turbine on `observeCases`) and
+- `:shared:data` `commonTest` — `InMemoryCaseRepository` (Turbine on `observeCases`),
   `MockAssessmentRepository` (full stage sequence, status transitions, cached replay,
-  scenario rotation, feedback round-trip) (12 tests)
+  scenario rotation, feedback round-trip), and `BackendAssessmentRepository` against a
+  scripted Ktor `MockEngine` (upload/poll/mapping happy path, pipeline failure stage,
+  unknown case, poll timeout, network error, 404 → null, feedback body) (19 tests)
 - `:shared:presentation` `commonTest` — the three ViewModels with fakes,
   `Dispatchers.setMain(UnconfinedTestDispatcher())`, and Turbine for `StateFlow`
   transitions; a `MutableSharedFlow`-driven fake steps the assessment pipeline; includes
@@ -357,12 +380,9 @@ Incremental — the app must stay buildable/runnable at every step:
 2. ✅ **Create `:shared:data`** — `MediaRecorderAudioRecorder` (androidMain) behind the port.
 3. ✅ **Create `:shared:presentation`** — `SymptomViewModel` + `SymptomUiState`; Koin wired in
    `:app` (`SecondOpinionApp` + `di/AppModule.kt`).
-4. **Fill the data layer** when Phase 2 starts: Ktor client + upload repository + SQLDelight
-   queue inside `:shared:data`.
+4. 🔶 **Fill the data layer** — Ktor client + `BackendAssessmentRepository` done; SQLDelight
+   case/result persistence remains.
 5. **Rename `app` → `androidApp`** (optional, cosmetic) once the shared modules are established.
-
-Do not do steps 4–5 before backend work begins — keep the codebase minimal (see project doc §8
-roadmap phases).
 
 Gradle note: shared modules apply `org.jetbrains.kotlin.multiplatform` and
 `com.android.kotlin.multiplatform.library` *without versions* — AGP 9 already puts both on the

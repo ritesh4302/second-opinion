@@ -1,5 +1,7 @@
 package org.charged_proton.secondopinion.data.repository
 
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
@@ -12,20 +14,23 @@ import org.charged_proton.secondopinion.domain.repository.CaseRepository
 /**
  * Mock: in-memory case store. Will be replaced by a SQLDelight-backed
  * implementation when persistence lands (ANDROID_APP.md §10 step 4).
+ *
+ * Case ids are UUIDs: the case id doubles as the backend recording id
+ * (the client-generated idempotency key of POST /v1/recordings).
  */
 class InMemoryCaseRepository : CaseRepository {
 
     private val cases = MutableStateFlow<Map<String, SymptomCase>>(emptyMap())
-    private var nextId = 1
 
     override fun observeCases(): Flow<List<SymptomCase>> =
         cases.map { byId ->
             byId.values.sortedByDescending(SymptomCase::createdAtEpochMillis)
         }
 
+    @OptIn(ExperimentalUuidApi::class)
     override suspend fun createCase(recording: Recording): SymptomCase {
         val case = SymptomCase(
-            id = "case-${nextId++}-${recording.createdAtEpochMillis}",
+            id = Uuid.random().toString(),
             recording = recording,
             status = CaseStatus.RECORDED,
             createdAtEpochMillis = recording.createdAtEpochMillis,

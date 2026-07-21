@@ -9,6 +9,8 @@ activityCompose = "1.13.0"
 kotlin = "2.2.10"
 composeBom = "2026.02.01"
 kotlinxCoroutines = "1.10.2"
+kotlinxSerialization = "1.9.0"
+ktor = "3.5.1"
 koin = "4.1.1"
 navigationCompose = "2.9.5"
 sherpaOnnx = "v1.13.4"
@@ -40,11 +42,18 @@ kotlin-test = { group = "org.jetbrains.kotlin", name = "kotlin-test", version.re
 # Android AAR built by JitPack from the official release (see jitpack.yml in the repo tag)
 sherpa-onnx = { group = "com.github.k2-fsa", name = "sherpa-onnx", version.ref = "sherpaOnnx" }
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "kotlinxCoroutines" }
+kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
+ktor-client-core = { group = "io.ktor", name = "ktor-client-core", version.ref = "ktor" }
+ktor-client-okhttp = { group = "io.ktor", name = "ktor-client-okhttp", version.ref = "ktor" }
+ktor-client-content-negotiation = { group = "io.ktor", name = "ktor-client-content-negotiation", version.ref = "ktor" }
+ktor-serialization-kotlinx-json = { group = "io.ktor", name = "ktor-serialization-kotlinx-json", version.ref = "ktor" }
+ktor-client-mock = { group = "io.ktor", name = "ktor-client-mock", version.ref = "ktor" }
 turbine = { group = "app.cash.turbine", name = "turbine", version.ref = "turbine" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 # No versions: both are already on the build classpath via the root's
 # com.android.application (AGP ships all plugins in one artifact and embeds KGP)
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform" }
