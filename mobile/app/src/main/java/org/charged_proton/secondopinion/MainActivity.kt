@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.ui.Modifier
-import org.charged_proton.secondopinion.ui.navigation.AppNavHost
+import org.charged_proton.secondopinion.ui.navigation.AuthGate
 import org.charged_proton.secondopinion.ui.theme.SecondOpinionTheme
 
 class MainActivity : ComponentActivity() {
@@ -18,7 +18,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             SecondOpinionTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    AppNavHost(
+                    AuthGate(
                         modifier = Modifier.padding(innerPadding)
                     )
                 }

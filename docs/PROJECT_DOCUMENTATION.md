@@ -4,7 +4,7 @@
 > project. It captures the problem, the agreed solution, key decisions, architecture, current
 > codebase state, and the roadmap. Keep it updated as decisions change.
 
-**Last updated:** 2026-07-21
+**Last updated:** 2026-07-23
 **Status:** POC in progress
 
 ---
@@ -147,14 +147,14 @@ Android app wired to the backend pipeline end-to-end.
 |---|---|
 | Project | Kotlin Multiplatform (KMM), layer-per-module: `:app` (Compose UI) + `:shared:domain` / `:shared:data` / `:shared:presentation`; Material3, dynamic color; minSdk 29, targetSdk 37 |
 | Package | `org.charged_proton.secondopinion` |
-| UI flow | Record (patient-consent dialog → Speak/Stop + runtime permission) → assessment (pipeline progress, referral banner on red flags, prescription-labeled guidance, pharmacist accept/reject/override) → history (case list + recording playback); Navigation Compose |
+| UI flow | Login gate (phone number → OTP) → record (patient-consent dialog → Speak/Stop + runtime permission) → assessment (pipeline progress, referral banner on red flags, prescription-labeled guidance, pharmacist accept/reject/override) → history (case list + recording playback); Navigation Compose |
 | Audio capture | `AudioRecord` 16 kHz mono PCM → Silero VAD silence trim (sherpa-onnx) → AAC/.m4a in app cache (see §6.3 and `docs/ANDROID_APP.md` §5.1) |
 | Data layer | `BackendAssessmentRepository` (Ktor): multipart upload → status polling → assessment fetch → feedback POST; in-memory case store (SQLDelight pending); mock repository kept for tests/demo |
 | `AndroidManifest.xml` | `RECORD_AUDIO` + `INTERNET`; debug manifest allows cleartext HTTP to the dev stack |
-| Auth / login | Backend: Firebase phone-auth ID-token verification (`TokenVerifier` port, `fake` provider for dev), `users` table, owner-scoped recordings, `GET /v1/auth/me`; app sign-in pending |
+| Auth / login | Backend: Firebase phone-auth ID-token verification (`TokenVerifier` port, `fake` provider for dev), `users` table, owner-scoped recordings, `GET /v1/auth/me`. App: phone-OTP login gate (`AuthClient` port; fake OTP adapter until the Firebase project lands), token persisted in SharedPreferences, `Authorization: Bearer` on every call, 401 → sign-out |
 | Backend | `backend/` FastAPI + Celery: `POST /v1/recordings` upload → MinIO + Postgres, speech worker (Sarvam Saaras v3 Batch API, native diarization), NLP worker (sarvam-30b relevance filter + structured extraction), assessment worker (sarvam-30b triage: conditions + confidence, red flags, OTC-preferred guidance with `prescription` labels; fake providers for dev), status/assessment/feedback endpoints, Alembic migrations, docker-compose dev stack (see `docs/BACKEND.md`) |
 | App ↔ backend | Wired (debug base URL `http://127.0.0.1:8000` via `adb reverse tcp:8000 tcp:8000`); verified end-to-end on emulator against the docker-compose stack incl. feedback persistence; assessment response now includes `symptom_summary` |
-| Tests | Mobile: 65 host unit tests (`commonTest`) + 21 Compose UI tests (`androidTest`); Backend: 41 pytest tests |
+| Tests | Mobile: 90 host unit tests (`commonTest`) + 25 Compose UI tests (`androidTest`); Backend: 41 pytest tests |
 
 ## 8. Roadmap
 
@@ -187,7 +187,9 @@ Android app wired to the backend pipeline end-to-end.
 ### Phase 4 — Hardening & pilot
 - [ ] Authentication and role model (pharmacist / patient / doctor) — backend done
   (Firebase phone-auth token verification, `users` table + role enum, owner-scoped data,
-  `/v1/auth/me`); app sign-in pending
+  `/v1/auth/me`); app phone-OTP login gate + bearer-token calls done (fake OTP adapter);
+  remaining: Firebase project provisioning (google-services.json) + Firebase phone-auth
+  adapter, sign-out UI
 - [ ] DPDP-compliant consent, retention, and deletion flows
 - [ ] Legal/regulatory review (CDSCO classification, pharmacist liability)
 - [ ] Pilot in North India Hindi-belt pharmacies

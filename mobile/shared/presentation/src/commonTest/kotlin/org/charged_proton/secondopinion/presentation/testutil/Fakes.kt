@@ -5,6 +5,9 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
+import org.charged_proton.secondopinion.domain.auth.AuthClient
+import org.charged_proton.secondopinion.domain.auth.AuthState
+import org.charged_proton.secondopinion.domain.auth.AuthUser
 import org.charged_proton.secondopinion.domain.model.Assessment
 import org.charged_proton.secondopinion.domain.model.AssessmentProgress
 import org.charged_proton.secondopinion.domain.model.CaseStatus
@@ -113,6 +116,39 @@ class FakeCaseRepository : CaseRepository {
         cases.update { list ->
             list.map { if (it.id == caseId) it.copy(status = status) else it }
         }
+    }
+}
+
+class FakeAuthClient : AuthClient {
+    val state = MutableStateFlow<AuthState>(AuthState.SignedOut)
+    var requestOtpError: Throwable? = null
+    var verifyOtpError: Throwable? = null
+    var token: String? = null
+    val requestedPhoneNumbers = mutableListOf<String>()
+    val verifiedCodes = mutableListOf<String>()
+    var signOutCalls = 0
+
+    override val authState = state
+
+    override suspend fun requestOtp(phoneNumber: String): Result<Unit> {
+        requestedPhoneNumbers += phoneNumber
+        requestOtpError?.let { return Result.failure(it) }
+        return Result.success(Unit)
+    }
+
+    override suspend fun verifyOtp(code: String): Result<AuthUser> {
+        verifiedCodes += code
+        verifyOtpError?.let { return Result.failure(it) }
+        val user = AuthUser("uid-1", "+911234567890")
+        state.value = AuthState.SignedIn(user)
+        return Result.success(user)
+    }
+
+    override suspend fun currentToken(): String? = token
+
+    override suspend fun signOut() {
+        signOutCalls++
+        state.value = AuthState.SignedOut
     }
 }
 
