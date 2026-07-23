@@ -32,17 +32,23 @@ class SymptomViewModel(
 
     private var isStopping = false
 
+    /** DPDP: whether the current capture flow's consent step was confirmed. */
+    private var consentGranted = false
+
     /** Speak tapped: ask for patient consent before anything records. */
     fun onRecordRequested() {
+        consentGranted = false
         _uiState.update { it.copy(awaitingConsent = true) }
     }
 
     /** Consent confirmed; the UI proceeds with the permission check + start. */
     fun onConsentConfirmed() {
+        consentGranted = true
         _uiState.update { it.copy(awaitingConsent = false) }
     }
 
     fun onConsentDeclined() {
+        consentGranted = false
         _uiState.update {
             it.copy(awaitingConsent = false, status = SymptomStatus.CONSENT_DECLINED)
         }
@@ -71,11 +77,12 @@ class SymptomViewModel(
         viewModelScope.launch {
             // stop() suspends while the recorder post-processes (VAD trim + encode)
             stopRecording()
-                .onSuccess { recording ->
-                    if (recording == null) {
+                .onSuccess { stopped ->
+                    if (stopped == null) {
                         _uiState.update { it.copy(isRecording = false, status = SymptomStatus.IDLE) }
                         return@launch
                     }
+                    val recording = stopped.copy(consentConfirmed = consentGranted)
                     _uiState.update {
                         it.copy(
                             isRecording = false,

@@ -22,4 +22,10 @@ interface AssessmentRepository {
 
     /** Previously submitted decision for an assessment, or null. */
     suspend fun getFeedback(assessmentId: String): Feedback?
+
+    /**
+     * DPDP erasure: deletes the case's backend recording (audio, transcripts,
+     * assessment), the local audio file, and the local case entry.
+     */
+    suspend fun deleteCase(caseId: String): Result<Unit>
 }

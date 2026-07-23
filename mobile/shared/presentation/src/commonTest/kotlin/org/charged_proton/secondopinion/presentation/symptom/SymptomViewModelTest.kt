@@ -217,6 +217,36 @@ class SymptomViewModelTest {
     }
 
     @Test
+    fun stopRecording_afterConsentConfirmed_marksRecordingConsented() = runTest {
+        recorder.stopResult = testRecording()
+        val vm = viewModel()
+        vm.onRecordRequested()
+        vm.onConsentConfirmed()
+        vm.onStartRecording()
+
+        vm.onStopRecording()
+
+        assertTrue(vm.uiState.value.lastRecording?.consentConfirmed == true)
+        assertTrue(caseRepository.cases.value.single().recording.consentConfirmed)
+    }
+
+    @Test
+    fun recordRequested_resetsConsentFromPreviousFlow() = runTest {
+        recorder.stopResult = testRecording()
+        val vm = viewModel()
+        vm.onRecordRequested()
+        vm.onConsentConfirmed()
+        vm.onStartRecording()
+        vm.onStopRecording()
+
+        vm.onRecordRequested() // new flow: consent not (yet) reconfirmed
+        vm.onStartRecording()
+        vm.onStopRecording()
+
+        assertFalse(vm.uiState.value.lastRecording?.consentConfirmed ?: true)
+    }
+
+    @Test
     fun clearingViewModel_releasesRecorder() {
         val store = ViewModelStore()
         store.put("vm", viewModel())

@@ -16,4 +16,7 @@ interface CaseRepository {
     suspend fun getCase(caseId: String): SymptomCase?
 
     suspend fun updateStatus(caseId: String, status: CaseStatus)
+
+    /** Removes the case from the local store; no-op when unknown. */
+    suspend fun deleteCase(caseId: String)
 }

@@ -3,6 +3,7 @@ package org.charged_proton.secondopinion.data.repository
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.MockRequestHandleScope
 import io.ktor.client.engine.mock.respond
+import io.ktor.client.engine.mock.toByteArray
 import io.ktor.client.request.HttpRequestData
 import io.ktor.client.request.HttpResponseData
 import io.ktor.content.TextContent
@@ -13,6 +14,7 @@ import io.ktor.http.headersOf
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.flow.toList
@@ -39,15 +41,27 @@ class BackendAssessmentRepositoryTest {
         var failureStage: String? = null
         var assessmentJson: String? = null
         var uploadCount = 0
+        var lastUploadBody: String? = null
         val feedbackBodies = mutableListOf<String>()
+        val deletedRecordingIds = mutableListOf<String>()
+        var deleteStatus = HttpStatusCode.NoContent
 
-        fun handle(scope: MockRequestHandleScope, request: HttpRequestData): HttpResponseData {
+        suspend fun handle(scope: MockRequestHandleScope, request: HttpRequestData): HttpResponseData {
             val path = request.url.encodedPath
             val json = headersOf(HttpHeaders.ContentType, "application/json")
             return when {
                 request.method == HttpMethod.Post && path == "/v1/recordings" -> {
                     uploadCount++
+                    lastUploadBody = request.body.toByteArray().decodeToString()
                     scope.respond(recordingJson("queued"), HttpStatusCode.Accepted, json)
+                }
+                request.method == HttpMethod.Delete && path.startsWith("/v1/recordings/") -> {
+                    deletedRecordingIds += path.substringAfterLast('/')
+                    if (deleteStatus == HttpStatusCode.NoContent) {
+                        scope.respond("", deleteStatus)
+                    } else {
+                        scope.respond("""{"title":"Recording not found"}""", deleteStatus, json)
+                    }
                 }
                 request.method == HttpMethod.Get && path.endsWith("/assessment") ->
                     if (uploadCount > 0 && assessmentJson != null) {
@@ -71,17 +85,21 @@ class BackendAssessmentRepositoryTest {
 
     private val backend = FakeBackend()
     private val caseRepository = InMemoryCaseRepository()
+    private val deletedAudioPaths = mutableListOf<String>()
 
     private fun repository(maxPollMillis: Long = 60_000) = BackendAssessmentRepository(
         api = BackendApi(backendHttpClient(MockEngine { backend.handle(this, it) }), "http://test"),
         caseRepository = caseRepository,
         audioFileReader = { byteArrayOf(1, 2, 3) },
+        audioFileDeleter = { deletedAudioPaths += it },
         pollIntervalMillis = 10,
         maxPollMillis = maxPollMillis,
     )
 
     private suspend fun seededCaseId(): String =
-        caseRepository.createCase(Recording("/tmp/rec.m4a", 1_000L, durationMillis = 4_200)).id
+        caseRepository.createCase(
+            Recording("/tmp/rec.m4a", 1_000L, durationMillis = 4_200, consentConfirmed = true),
+        ).id
 
     @Test
     fun requestAssessment_uploadsPollsAndMapsTheAssessment() = runTest {
@@ -153,14 +171,7 @@ class BackendAssessmentRepositoryTest {
     @Test
     fun requestAssessment_networkError_failsTheCase() = runTest {
         val caseId = seededCaseId()
-        val broken = BackendAssessmentRepository(
-            api = BackendApi(
-                backendHttpClient(MockEngine { throw RuntimeException("connection refused") }),
-                "http://test",
-            ),
-            caseRepository = caseRepository,
-            audioFileReader = { byteArrayOf(1) },
-        )
+        val broken = brokenRepository()
 
         val emissions = broken.requestAssessment(caseId).toList()
 
@@ -172,6 +183,63 @@ class BackendAssessmentRepositoryTest {
     @Test
     fun getAssessment_notReadyOnBackend_returnsNull() = runTest {
         assertNull(repository().getAssessment(seededCaseId()))
+    }
+
+    private fun brokenRepository() = BackendAssessmentRepository(
+        api = BackendApi(
+            backendHttpClient(MockEngine { throw RuntimeException("connection refused") }),
+            "http://test",
+        ),
+        caseRepository = caseRepository,
+        audioFileReader = { byteArrayOf(1) },
+        audioFileDeleter = { deletedAudioPaths += it },
+    )
+
+    @Test
+    fun requestAssessment_uploadSendsConsentConfirmedField() = runTest {
+        val caseId = seededCaseId()
+        backend.recordingStatuses.add("failed")
+
+        repository().requestAssessment(caseId).toList()
+
+        val body = assertNotNull(backend.lastUploadBody)
+        assertTrue("consent_confirmed" in body)
+        assertTrue("true" in body.substringAfter("consent_confirmed"))
+    }
+
+    @Test
+    fun deleteCase_erasesBackendRecordingLocalAudioAndCase() = runTest {
+        val caseId = seededCaseId()
+
+        val result = repository().deleteCase(caseId)
+
+        assertTrue(result.isSuccess)
+        assertEquals(listOf(caseId), backend.deletedRecordingIds)
+        assertEquals(listOf("/tmp/rec.m4a"), deletedAudioPaths)
+        assertNull(caseRepository.getCase(caseId))
+    }
+
+    @Test
+    fun deleteCase_backendMissing_stillErasesLocally() = runTest {
+        val caseId = seededCaseId()
+        backend.deleteStatus = HttpStatusCode.NotFound
+
+        val result = repository().deleteCase(caseId)
+
+        assertTrue(result.isSuccess)
+        assertEquals(listOf("/tmp/rec.m4a"), deletedAudioPaths)
+        assertNull(caseRepository.getCase(caseId))
+    }
+
+    @Test
+    fun deleteCase_networkError_keepsTheLocalCase() = runTest {
+        val caseId = seededCaseId()
+
+        val result = brokenRepository().deleteCase(caseId)
+
+        assertTrue(result.isFailure)
+        assertNotNull(caseRepository.getCase(caseId))
+        assertTrue(deletedAudioPaths.isEmpty())
     }
 
     @Test

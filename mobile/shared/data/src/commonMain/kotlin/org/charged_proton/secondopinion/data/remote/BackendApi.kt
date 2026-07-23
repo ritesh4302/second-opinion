@@ -7,6 +7,7 @@ import io.ktor.client.plugins.ResponseException
 import io.ktor.client.plugins.api.Send
 import io.ktor.client.plugins.api.createClientPlugin
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.request.delete
 import io.ktor.client.request.forms.formData
 import io.ktor.client.request.forms.submitFormWithBinaryData
 import io.ktor.client.request.get
@@ -36,12 +37,14 @@ class BackendApi(
         audio: ByteArray,
         durationMillis: Long,
         locale: String,
+        consentConfirmed: Boolean,
     ): RecordingDto = client.submitFormWithBinaryData(
         url = "$baseUrl/v1/recordings",
         formData = formData {
             append("id", recordingId)
             append("duration_ms", durationMillis.toString())
             append("locale", locale)
+            append("consent_confirmed", consentConfirmed.toString())
             append(
                 "audio",
                 audio,
@@ -55,6 +58,11 @@ class BackendApi(
 
     suspend fun getRecording(recordingId: String): RecordingDto =
         client.get("$baseUrl/v1/recordings/$recordingId").body()
+
+    /** DPDP erasure: removes the recording, its audio, and derived data. */
+    suspend fun deleteRecording(recordingId: String) {
+        client.delete("$baseUrl/v1/recordings/$recordingId")
+    }
 
     suspend fun getAssessment(recordingId: String): AssessmentDto =
         client.get("$baseUrl/v1/recordings/$recordingId/assessment").body()

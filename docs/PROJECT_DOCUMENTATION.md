@@ -147,14 +147,14 @@ Android app wired to the backend pipeline end-to-end.
 |---|---|
 | Project | Kotlin Multiplatform (KMM), layer-per-module: `:app` (Compose UI) + `:shared:domain` / `:shared:data` / `:shared:presentation`; Material3, dynamic color; minSdk 29, targetSdk 37 |
 | Package | `org.charged_proton.secondopinion` |
-| UI flow | Login gate (phone number → OTP) → record (patient-consent dialog → Speak/Stop + runtime permission) → assessment (pipeline progress, referral banner on red flags, prescription-labeled guidance, pharmacist accept/reject/override) → history (case list + recording playback); Navigation Compose |
+| UI flow | Login gate (phone number → OTP) → record (patient-consent dialog → Speak/Stop + runtime permission) → assessment (pipeline progress, referral banner on red flags, prescription-labeled guidance, pharmacist accept/reject/override) → history (case list + recording playback + delete with confirmation); Navigation Compose |
 | Audio capture | `AudioRecord` 16 kHz mono PCM → Silero VAD silence trim (sherpa-onnx) → AAC/.m4a in app cache (see §6.3 and `docs/ANDROID_APP.md` §5.1) |
-| Data layer | `BackendAssessmentRepository` (Ktor): multipart upload → status polling → assessment fetch → feedback POST; in-memory case store (SQLDelight pending); mock repository kept for tests/demo |
+| Data layer | `BackendAssessmentRepository` (Ktor): multipart upload (with consent flag) → status polling → assessment fetch → feedback POST; case deletion = backend DELETE + local audio-file cleanup; in-memory case store (SQLDelight pending); mock repository kept for tests/demo |
 | `AndroidManifest.xml` | `RECORD_AUDIO` + `INTERNET`; debug manifest allows cleartext HTTP to the dev stack |
 | Auth / login | Backend: Firebase phone-auth ID-token verification (`TokenVerifier` port, `fake` provider for dev), `users` table, owner-scoped recordings, `GET /v1/auth/me`. App: phone-OTP login gate (`AuthClient` port; fake OTP adapter until the Firebase project lands), token persisted in SharedPreferences, `Authorization: Bearer` on every call, 401 → sign-out |
 | Backend | `backend/` FastAPI + Celery: `POST /v1/recordings` upload → MinIO + Postgres, speech worker (Sarvam Saaras v3 Batch API, native diarization), NLP worker (sarvam-30b relevance filter + structured extraction), assessment worker (sarvam-30b triage: conditions + confidence, red flags, OTC-preferred guidance with `prescription` labels; fake providers for dev), status/assessment/feedback endpoints, Alembic migrations, docker-compose dev stack (see `docs/BACKEND.md`) |
 | App ↔ backend | Wired (debug base URL `http://127.0.0.1:8000` via `adb reverse tcp:8000 tcp:8000`); verified end-to-end on emulator against the docker-compose stack incl. feedback persistence; assessment response now includes `symptom_summary` |
-| Tests | Mobile: 90 host unit tests (`commonTest`) + 25 Compose UI tests (`androidTest`); Backend: 41 pytest tests |
+| Tests | Mobile: 104 host unit tests (`commonTest`) + 28 Compose UI tests (`androidTest`); Backend: 50 pytest tests |
 
 ## 8. Roadmap
 
@@ -190,7 +190,12 @@ Android app wired to the backend pipeline end-to-end.
   `/v1/auth/me`); app phone-OTP login gate + bearer-token calls done (fake OTP adapter);
   remaining: Firebase project provisioning (google-services.json) + Firebase phone-auth
   adapter, sign-out UI
-- [ ] DPDP-compliant consent, retention, and deletion flows
+- [x] DPDP-compliant consent, retention, and deletion flows — upload requires
+  `consent_confirmed=true` (set from the in-app consent dialog and stored on the
+  recording), `DELETE /v1/recordings/{id}` erasure cascades to audio + transcripts +
+  extraction + assessment + feedback (app: per-case delete with confirmation in
+  history, incl. local audio-file cleanup), daily retention sweep purges audio +
+  transcripts after `SO_RETENTION_DAYS` (default 30)
 - [ ] Legal/regulatory review (CDSCO classification, pharmacist liability)
 - [ ] Pilot in North India Hindi-belt pharmacies
 
@@ -202,7 +207,7 @@ Android app wired to the backend pipeline end-to-end.
 | Q2 | ~~Does Sarvam provide adequate diarization natively?~~ | **Answered:** yes — Saaras v3 Batch API supports `with_diarization` (≤1 h, ≤8 speakers); integrated as single-vendor speech stage. Quality on real pharmacy audio still to be validated (benchmark task) |
 | Q3 | Which medical AI model for assessment | Interim: general sarvam-30b behind the `Assessor` port (working end-to-end); dedicated medical LLM (open-source, e.g. MedGemma-class, vs API) still to be benchmarked — drop-in swap |
 | Q4 | CDSCO medical-device classification | Legal review required before pilot |
-| Q5 | DPDP Act 2023 compliance | Voice + health data are sensitive; consent flow and retention policy needed before any real-patient use |
+| Q5 | DPDP Act 2023 compliance | Voice + health data are sensitive; consent capture, erasure (in-app case deletion), and retention sweep are implemented — legal review of the policy itself (window length, consent wording) still needed before real-patient use |
 | Q6 | Liability framing | Pharmacist is final decision-maker; needs explicit in-app disclaimers and terms |
 
 ## 10. Related Files

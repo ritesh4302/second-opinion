@@ -110,6 +110,10 @@ class FakeCaseRepository : CaseRepository {
             list.map { if (it.id == caseId) it.copy(status = status) else it }
         }
     }
+
+    override suspend fun deleteCase(caseId: String) {
+        cases.update { list -> list.filterNot { it.id == caseId } }
+    }
 }
 
 class FakeAuthClient : AuthClient {
@@ -146,6 +150,9 @@ class FakeAssessmentRepository : AssessmentRepository {
     val assessmentsByCaseId = mutableMapOf<String, Assessment>()
     val feedbackByAssessmentId = mutableMapOf<String, Feedback>()
     var submitError: Throwable? = null
+    val deletedCaseIds = mutableListOf<String>()
+    /** Mirrors local-store removal on delete, like the real repository. */
+    var caseRepository: CaseRepository? = null
 
     override fun requestAssessment(caseId: String): Flow<AssessmentProgress> = progressFlow
 
@@ -160,4 +167,11 @@ class FakeAssessmentRepository : AssessmentRepository {
 
     override suspend fun getFeedback(assessmentId: String): Feedback? =
         feedbackByAssessmentId[assessmentId]
+
+    override suspend fun deleteCase(caseId: String): Result<Unit> {
+        deletedCaseIds += caseId
+        assessmentsByCaseId.remove(caseId)
+        caseRepository?.deleteCase(caseId)
+        return Result.success(Unit)
+    }
 }

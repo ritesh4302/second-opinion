@@ -11,8 +11,9 @@ backend** (Ktor multipart upload → status polling → assessment fetch → fee
 end-to-end against the docker-compose stack); on-device VAD silence trimming (Silero via
 sherpa-onnx) in the recording pipeline; consent step before recording and recording playback
 from history (Phase 1 capture POC complete); phone-OTP login gate with bearer-token backend
-auth (fake OTP adapter — Firebase phone auth pending a Firebase project); cases still
-in-memory (SQLDelight pending)
+auth (fake OTP adapter — Firebase phone auth pending a Firebase project); DPDP flows:
+consent flag sent with the upload + per-case deletion from history (backend erasure +
+local audio cleanup); cases still in-memory (SQLDelight pending)
 
 ---
 
@@ -99,7 +100,8 @@ mobile/
 │           ├── record/RecordScreen.kt          # consent dialog, Speak/Stop, permission,
 │           │                                   #   → assessment/history
 │           ├── assessment/AssessmentScreen.kt  # progress → result → pharmacist decision
-│           ├── history/HistoryScreen.kt        # case list, play/stop recording, tap → assessment
+│           ├── history/HistoryScreen.kt        # case list, play/stop, delete (confirm
+│           │                                   #   dialog), tap → assessment
 │           └── theme/                  # Material3 theme (Color, Theme, Type)
 └── shared/
     ├── domain/                         # :shared:domain — pure Kotlin commonMain
@@ -109,18 +111,20 @@ mobile/
     │       │                           #   AssessmentProgress, Feedback
     │       ├── platform/               # AudioRecorder, AudioPlayer (port interfaces)
     │       ├── repository/             # CaseRepository, AssessmentRepository (ports)
-    │       └── usecase/                # auth + recording + playback + case + assessment + feedback
+    │       └── usecase/                # auth + recording + playback + case (incl. delete)
+    │                                   #   + assessment + feedback
     ├── data/                           # :shared:data — implements domain ports
     │   ├── src/androidMain/.../data/
     │   │   ├── audio/                  # SileroVadTrimmer (sherpa-onnx), AacM4aEncoder
     │   │   ├── auth/SharedPreferencesAuthTokenStore.kt  # persists the session token
     │   │   ├── platform/AndroidAudioFileReader.kt  # reads recording bytes for upload
+    │   │   ├── platform/AndroidAudioFileDeleter.kt # removes the local .m4a on case delete
     │   │   ├── player/MediaPlayerAudioPlayer.kt    # MediaPlayer impl of AudioPlayer
     │   │   └── recorder/VadTrimmingAudioRecorder.kt
     │   └── src/commonMain/.../data/
     │       ├── auth/                   # AuthTokenStore port, FakeOtpAuthClient (dev OTP)
     │       ├── mock/MockAssessmentScenarios.kt  # canned assessments (kept for tests/demo)
-    │       ├── platform/AudioFileReader.kt      # fun interface port for audio bytes
+    │       ├── platform/                # AudioFileReader + AudioFileDeleter (fun interface ports)
     │       ├── remote/                 # BackendApi (Ktor + bearer token), DTOs + mappers
     │       └── repository/             # InMemoryCaseRepository, BackendAssessmentRepository,
     │                                   #   MockAssessmentRepository (unused in app wiring)
@@ -131,7 +135,7 @@ mobile/
             ├── symptom/                # SymptomViewModel + SymptomUiState (consent step,
             │                           #   creates case on stop)
             ├── assessment/             # AssessmentViewModel + AssessmentUiState
-            └── history/HistoryViewModel.kt      # streams case list + playback toggle
+            └── history/HistoryViewModel.kt      # case list + playback toggle + delete confirmation
 ```
 
 ### 3.2 Target (full)
@@ -224,7 +228,7 @@ Pharmacist taps "Speak"
   → UiState(isRecording = true)
 Pharmacist taps "Stop"
   → suspend AudioRecorder.stop()                    (VAD silence trim → AAC encode → .m4a in cache)
-  → Recording(file, durationMs, createdAt)
+  → Recording(file, durationMs, createdAt, consentConfirmed)   (consent dialog outcome)
   → RecordingRepository.save(recording)             (SQLDelight metadata + file reference)
   → UiState(isRecording = false, lastRecording = ...)
 
@@ -255,6 +259,10 @@ AssessmentViewModel(caseId) init
 HistoryScreen
   → ObserveCasesUseCase → case list (newest first) → tap → assessment/{caseId}
       (already-assessed case: Flow emits Completed immediately, decision preloaded)
+  → Delete on a case → confirmation dialog → DeleteCaseUseCase
+      → DELETE /v1/recordings/{id} (backend erasure cascade; 404 tolerated —
+        never-uploaded cases still erase locally) → local .m4a deleted → case removed
+        (network failure keeps the case so erasure can be retried)
 ```
 
 `InMemoryCaseRepository` is still the case store (SQLDelight pending) — cases and cached
@@ -301,24 +309,25 @@ receives a ready-to-use `AudioRecorder` or a failure.
 | `mobile/app/.../ui/navigation/AppNavHost.kt` | Navigation Compose graph: `record` (start), `history`, `assessment/{caseId}` |
 | `mobile/app/.../ui/record/RecordScreen.kt` | Patient-consent `AlertDialog` (tap-to-confirm before recording), Speak/Stop, `RECORD_AUDIO` permission, "Get assessment" (when case created), "View history" |
 | `mobile/app/.../ui/assessment/AssessmentScreen.kt` | Pipeline progress spinner, assessment result (referral banner → summary → conditions → medicine guidance with prescription badges → disclaimer), accept/reject/override decision bar |
-| `mobile/app/.../ui/history/HistoryScreen.kt` | Case list (timestamp + status), per-case Play/Stop recording playback, tap → assessment; empty state |
+| `mobile/app/.../ui/history/HistoryScreen.kt` | Case list (timestamp + status), per-case Play/Stop recording playback and Delete (confirmation `AlertDialog` before erasure), tap → assessment; empty state |
 | `mobile/app/.../ui/theme/*` | Material3 theme, dynamic color (Android 12+), dark/light |
-| `mobile/app/src/main/res/values/strings.xml` | UI strings (login/record/consent/assessment/history/playback/decision/case-status) |
+| `mobile/app/src/main/res/values/strings.xml` | UI strings (login/record/consent/assessment/history/playback/deletion/decision/case-status) |
 | `mobile/app/src/main/AndroidManifest.xml` | `RECORD_AUDIO`, Application class, single launcher activity |
 | `mobile/shared/domain/.../auth/AuthClient.kt` | `AuthClient` port (requestOtp/verifyOtp/currentToken/signOut + `authState`), `AuthState` (Unknown/SignedOut/SignedIn), `AuthUser`, auth exceptions |
-| `mobile/shared/domain/.../model/*` | `Recording`, `SymptomCase` + `CaseStatus`, `Assessment` (+`ConditionHypothesis`, `RedFlag`, `OtcAdvice`), `AssessmentProgress` + `PipelineStage`, `Feedback` + `PharmacistDecision` |
+| `mobile/shared/domain/.../model/*` | `Recording` (incl. `consentConfirmed`), `SymptomCase` + `CaseStatus`, `Assessment` (+`ConditionHypothesis`, `RedFlag`, `OtcAdvice`), `AssessmentProgress` + `PipelineStage`, `Feedback` + `PharmacistDecision` |
 | `mobile/shared/domain/.../platform/AudioRecorder.kt` | Port interface: `start()`, `suspend stop(): Recording?` (post-processing happens in stop), `release()`, `isRecording` |
 | `mobile/shared/domain/.../platform/AudioPlayer.kt` | Port interface: `play(filePath, onCompleted)` (throws if playback cannot start), `stop()`; one playback at a time |
-| `mobile/shared/domain/.../repository/*` | Ports: `CaseRepository` (observe/create/get/updateStatus), `AssessmentRepository` (requestAssessment `Flow`, getAssessment, submit/getFeedback) |
-| `mobile/shared/domain/.../usecase/*` | Auth (ObserveAuthState/RequestOtp/VerifyOtp), recording (Start/Stop/Release), playback (Play/Stop), case (Create/Observe/Get), assessment (Request/Get), feedback (Submit/Get) use cases |
+| `mobile/shared/domain/.../repository/*` | Ports: `CaseRepository` (observe/create/get/updateStatus/delete), `AssessmentRepository` (requestAssessment `Flow`, getAssessment, submit/getFeedback, deleteCase) |
+| `mobile/shared/domain/.../usecase/*` | Auth (ObserveAuthState/RequestOtp/VerifyOtp), recording (Start/Stop/Release), playback (Play/Stop), case (Create/Observe/Get/Delete), assessment (Request/Get), feedback (Submit/Get) use cases |
 | `mobile/shared/data/.../recorder/VadTrimmingAudioRecorder.kt` | `AudioRecord` impl of the port (androidMain): captures 16 kHz mono PCM on a thread; `stop()` trims silence via VAD and writes `symptom_recording_<ts>.m4a` to `cacheDir` (falls back to the full buffer when no speech detected) |
 | `mobile/shared/data/.../audio/SileroVadTrimmer.kt` | Silero VAD via sherpa-onnx: finds the padded speech range; model `silero_vad.onnx` loaded from app assets |
 | `mobile/shared/data/.../audio/AacM4aEncoder.kt` | Mono 16-bit PCM → AAC-LC/.m4a via `MediaCodec` + `MediaMuxer` |
 | `mobile/shared/data/.../player/MediaPlayerAudioPlayer.kt` | `MediaPlayer` impl of the `AudioPlayer` port (androidMain): plays the cached `.m4a`, completion listener releases and fires `onCompleted` |
-| `mobile/shared/data/.../remote/BackendApi.kt` | Ktor client (`expectSuccess`, kotlinx JSON) + the four backend calls: multipart upload, recording status, assessment fetch, feedback POST; `BackendAuth` plugin attaches `Authorization: Bearer <token>` from a `tokenProvider` and fires `onUnauthorized` on 401; `createBackendApi(baseUrl, tokenProvider, onUnauthorized)` used by DI (OkHttp engine on Android) |
+| `mobile/shared/data/.../remote/BackendApi.kt` | Ktor client (`expectSuccess`, kotlinx JSON) + the five backend calls: multipart upload (incl. `consent_confirmed`), recording status, assessment fetch, feedback POST, recording DELETE; `BackendAuth` plugin attaches `Authorization: Bearer <token>` from a `tokenProvider` and fires `onUnauthorized` on 401; `createBackendApi(baseUrl, tokenProvider, onUnauthorized)` used by DI (OkHttp engine on Android) |
 | `mobile/shared/data/.../remote/BackendDtos.kt` | `@Serializable` DTOs mirroring `RecordingOut`/`AssessmentOut`/`FeedbackIn` + DTO → domain mappers |
-| `mobile/shared/data/.../repository/BackendAssessmentRepository.kt` | Real `AssessmentRepository`: upload → poll (2 s interval, 15 min cap) → assessment fetch as a cold `Flow<AssessmentProgress>`; maps backend statuses to `PipelineStage`; mirrors progress into `CaseRepository`; caches assessments + feedback in memory |
+| `mobile/shared/data/.../repository/BackendAssessmentRepository.kt` | Real `AssessmentRepository`: upload → poll (2 s interval, 15 min cap) → assessment fetch as a cold `Flow<AssessmentProgress>`; maps backend statuses to `PipelineStage`; mirrors progress into `CaseRepository`; caches assessments + feedback in memory; `deleteCase` = backend DELETE (404 tolerated) → local audio file + case removal (network failure keeps the case) |
 | `mobile/shared/data/.../platform/AudioFileReader.kt` (+ `AndroidAudioFileReader`) | `fun interface` port reading recording bytes for upload; Android impl reads the `.m4a` from cache |
+| `mobile/shared/data/.../platform/AudioFileDeleter.kt` (+ `AndroidAudioFileDeleter`) | `fun interface` port deleting the local recording file on case erasure |
 | `mobile/shared/data/.../repository/InMemoryCaseRepository.kt` | `StateFlow`-backed case store (newest first); UUID case ids (shared with the backend) |
 | `mobile/shared/data/.../repository/MockAssessmentRepository.kt` | Mock kept for tests/demo: simulates pipeline with staged delays, rotates canned scenarios (no longer wired in `AppModule`) |
 | `mobile/shared/data/.../mock/MockAssessmentScenarios.kt` | Three canned assessments: viral URI, gastroenteritis (incl. a prescription-labeled medicine), red-flag chest pain (no OTC, urgent referral) |
@@ -326,9 +335,9 @@ receives a ready-to-use `AudioRecorder` or a failure.
 | `mobile/shared/data/.../auth/FakeOtpAuthClient.kt` | Dev `AuthClient`: any E.164 number + OTP `123456` → `fake:<uid>:<phone>` bearer token (accepted by the backend's `SO_AUTH_PROVIDER=fake` verifier); restores the session from the token store on start |
 | `mobile/shared/presentation/.../auth/AuthViewModel.kt` | Exposes `AuthClient.authState` for the app-level login gate |
 | `mobile/shared/presentation/.../login/*` | `LoginViewModel` (phone → OTP two-step, `isSubmitting` re-entry guard, error mapping), `LoginUiState` + `LoginStep`/`LoginError` |
-| `mobile/shared/presentation/.../symptom/*` | `SymptomViewModel` (consent step via `awaitingConsent`, creates case on stop → `lastCaseId`), `SymptomUiState` + `SymptomStatus` (incl. `CONSENT_DECLINED`) |
+| `mobile/shared/presentation/.../symptom/*` | `SymptomViewModel` (consent step via `awaitingConsent`; the dialog outcome sets `consentConfirmed` on the stopped recording; creates case on stop → `lastCaseId`), `SymptomUiState` + `SymptomStatus` (incl. `CONSENT_DECLINED`) |
 | `mobile/shared/presentation/.../assessment/*` | `AssessmentViewModel` (streams progress, loads prior decision, submits feedback), `AssessmentUiState` |
-| `mobile/shared/presentation/.../history/HistoryViewModel.kt` | `stateIn`-shared case list + `playingCaseId` playback toggle (`HistoryUiState`) |
+| `mobile/shared/presentation/.../history/HistoryViewModel.kt` | `stateIn`-shared case list + `playingCaseId` playback toggle + delete flow (`confirmingDeleteCaseId` drives the confirmation dialog; confirm stops playback if needed → `DeleteCaseUseCase`) (`HistoryUiState`) |
 
 Known gaps (intentional): no persistence (SQLDelight — cases and cached assessments vanish on
 process death), auth uses the fake OTP adapter until a Firebase project is provisioned
@@ -378,30 +387,35 @@ used instead of the classic `10.0.2.2` host alias because the current emulator's
 does not route app traffic through it reliably (shell traffic works, app sockets time out).
 
 **Testing strategy (implemented):** each shared module owns its tests in `commonTest`
-(90 tests total, run on the JVM via the AGP-KMP `withHostTest {}` DSL):
-- `:shared:domain` `commonTest` — all 15 use cases against hand-written fakes of the five
-  ports (`testutil/Fakes.kt`); verifies `Result` wrapping and delegation (24 tests)
-- `:shared:data` `commonTest` — `InMemoryCaseRepository` (Turbine on `observeCases`),
-  `MockAssessmentRepository` (full stage sequence, status transitions, cached replay,
-  scenario rotation, feedback round-trip), `BackendAssessmentRepository` against a
-  scripted Ktor `MockEngine` (upload/poll/mapping happy path, pipeline failure stage,
-  unknown case, poll timeout, network error, 404 → null, feedback body),
-  `FakeOtpAuthClient` (session restore, E.164 validation, OTP flow, sign-out), and the
-  `BackendAuth` plugin (bearer header on/off, 401 → `onUnauthorized`) (31 tests)
+(104 tests total, run on the JVM via the AGP-KMP `withHostTest {}` DSL):
+- `:shared:domain` `commonTest` — all 16 use cases against hand-written fakes of the five
+  ports (`testutil/Fakes.kt`); verifies `Result` wrapping and delegation (26 tests)
+- `:shared:data` `commonTest` — `InMemoryCaseRepository` (Turbine on `observeCases`,
+  delete), `MockAssessmentRepository` (full stage sequence, status transitions, cached
+  replay, scenario rotation, feedback round-trip, delete), `BackendAssessmentRepository`
+  against a scripted Ktor `MockEngine` (upload/poll/mapping happy path, consent field in
+  the upload body, pipeline failure stage, unknown case, poll timeout, network error,
+  404 → null, feedback body, delete: backend + local erasure / 404 tolerated / network
+  failure keeps the case), `FakeOtpAuthClient` (session restore, E.164 validation, OTP
+  flow, sign-out), and the `BackendAuth` plugin (bearer header on/off,
+  401 → `onUnauthorized`) (37 tests)
 - `:shared:presentation` `commonTest` — the four ViewModels with fakes,
   `Dispatchers.setMain(UnconfinedTestDispatcher())`, and Turbine for `StateFlow`
   transitions; a `MutableSharedFlow`-driven fake steps the assessment pipeline; includes
-  a gated-suspend fake proving double-stop re-entry is ignored, the consent step,
-  history playback toggling/completion/error handling, and the login phone → OTP steps
-  with error mapping (35 tests)
+  a gated-suspend fake proving double-stop re-entry is ignored, the consent step (incl.
+  the `consentConfirmed` flag on the stopped recording and its reset per flow),
+  history playback toggling/completion/error handling, the delete confirmation flow
+  (request/dismiss/confirm, playback stopped on delete), and the login phone → OTP
+  steps with error mapping (41 tests)
 - `:app` `androidTest` — Compose UI tests (`ui-test-junit4`) for all four screens
-  (25 tests, device/emulator required): login (send code → OTP step, verify → signed in,
+  (28 tests, device/emulator required): login (send code → OTP step, verify → signed in,
   wrong-code error, change number), record (consent dialog confirm/decline,
   Speak/Stop toggle, saved-case → "Get assessment" navigation, permission-denied
   messaging, history navigation), assessment (pipeline progress, failure reason,
   referral banner, prescription-drug badge, accept/reject/override decision bar,
   decision recording/preloading), and history (empty state, status labels, playback
-  Play/Stop toggle, tap-to-open). Screens get ViewModels built on androidTest fakes —
+  Play/Stop toggle, tap-to-open, delete: confirmation dialog / confirm removes /
+  cancel keeps). Screens get ViewModels built on androidTest fakes —
   no microphone, backend, or Koin graph involved; `RECORD_AUDIO` granted via
   `UiAutomation` in `@Before`
 - Convention: hand-written fakes over mocking libraries (pure Kotlin, KMP-compatible);

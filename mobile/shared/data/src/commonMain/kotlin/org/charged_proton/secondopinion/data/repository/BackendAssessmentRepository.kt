@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import org.charged_proton.secondopinion.data.platform.AudioFileDeleter
 import org.charged_proton.secondopinion.data.platform.AudioFileReader
 import org.charged_proton.secondopinion.data.remote.BackendApi
 import org.charged_proton.secondopinion.data.remote.FeedbackRequestDto
@@ -34,6 +35,7 @@ class BackendAssessmentRepository(
     private val api: BackendApi,
     private val caseRepository: CaseRepository,
     private val audioFileReader: AudioFileReader,
+    private val audioFileDeleter: AudioFileDeleter,
     private val locale: String = "hi-IN",
     private val pollIntervalMillis: Long = 2_000,
     private val maxPollMillis: Long = 15 * 60_000,
@@ -60,7 +62,13 @@ class BackendAssessmentRepository(
             val audio = withContext(Dispatchers.Default) {
                 audioFileReader.read(case.recording.filePath)
             }
-            api.uploadRecording(caseId, audio, case.recording.durationMillis, locale)
+            api.uploadRecording(
+                caseId,
+                audio,
+                case.recording.durationMillis,
+                locale,
+                case.recording.consentConfirmed,
+            )
 
             caseRepository.updateStatus(caseId, CaseStatus.PROCESSING)
             pollUntilDone(caseId)
@@ -135,4 +143,20 @@ class BackendAssessmentRepository(
 
     override suspend fun getFeedback(assessmentId: String): Feedback? =
         mutex.withLock { feedbackByAssessmentId[assessmentId] }
+
+    override suspend fun deleteCase(caseId: String): Result<Unit> = runCatching {
+        try {
+            api.deleteRecording(caseId)
+        } catch (notFound: ClientRequestException) {
+            // Never uploaded or already purged server-side; still erase locally.
+            if (notFound.response.status != HttpStatusCode.NotFound) throw notFound
+        }
+        caseRepository.getCase(caseId)?.let { case ->
+            withContext(Dispatchers.Default) { audioFileDeleter.delete(case.recording.filePath) }
+        }
+        caseRepository.deleteCase(caseId)
+        mutex.withLock {
+            assessmentsByCaseId.remove(caseId)?.let { feedbackByAssessmentId.remove(it.id) }
+        }
+    }
 }

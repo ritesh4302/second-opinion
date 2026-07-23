@@ -5,7 +5,9 @@ import org.charged_proton.secondopinion.data.audio.SileroVadTrimmer
 import org.charged_proton.secondopinion.data.auth.AuthTokenStore
 import org.charged_proton.secondopinion.data.auth.FakeOtpAuthClient
 import org.charged_proton.secondopinion.data.auth.SharedPreferencesAuthTokenStore
+import org.charged_proton.secondopinion.data.platform.AndroidAudioFileDeleter
 import org.charged_proton.secondopinion.data.platform.AndroidAudioFileReader
+import org.charged_proton.secondopinion.data.platform.AudioFileDeleter
 import org.charged_proton.secondopinion.data.platform.AudioFileReader
 import org.charged_proton.secondopinion.data.player.MediaPlayerAudioPlayer
 import org.charged_proton.secondopinion.data.recorder.VadTrimmingAudioRecorder
@@ -18,6 +20,7 @@ import org.charged_proton.secondopinion.domain.platform.AudioRecorder
 import org.charged_proton.secondopinion.domain.repository.AssessmentRepository
 import org.charged_proton.secondopinion.domain.repository.CaseRepository
 import org.charged_proton.secondopinion.domain.usecase.CreateCaseUseCase
+import org.charged_proton.secondopinion.domain.usecase.DeleteCaseUseCase
 import org.charged_proton.secondopinion.domain.usecase.GetAssessmentUseCase
 import org.charged_proton.secondopinion.domain.usecase.GetCaseUseCase
 import org.charged_proton.secondopinion.domain.usecase.GetFeedbackUseCase
@@ -48,6 +51,7 @@ val appModule = module {
     single<AudioPlayer> { MediaPlayerAudioPlayer() }
     single<CaseRepository> { InMemoryCaseRepository() }
     single<AudioFileReader> { AndroidAudioFileReader() }
+    single<AudioFileDeleter> { AndroidAudioFileDeleter() }
     // Fake OTP client until the Firebase project (google-services.json) lands;
     // it pairs with the backend's SO_AUTH_PROVIDER=fake verifier.
     single<AuthTokenStore> { SharedPreferencesAuthTokenStore(androidContext()) }
@@ -60,7 +64,7 @@ val appModule = module {
             onUnauthorized = { authClient.signOut() },
         )
     }
-    single<AssessmentRepository> { BackendAssessmentRepository(get(), get(), get()) }
+    single<AssessmentRepository> { BackendAssessmentRepository(get(), get(), get(), get()) }
 
     // Use cases
     factory { ObserveAuthStateUseCase(get()) }
@@ -72,6 +76,7 @@ val appModule = module {
     factory { PlayRecordingUseCase(get()) }
     factory { StopPlaybackUseCase(get()) }
     factory { CreateCaseUseCase(get()) }
+    factory { DeleteCaseUseCase(get()) }
     factory { ObserveCasesUseCase(get()) }
     factory { GetCaseUseCase(get()) }
     factory { RequestAssessmentUseCase(get()) }
@@ -84,5 +89,5 @@ val appModule = module {
     viewModel { LoginViewModel(get(), get()) }
     viewModel { SymptomViewModel(get(), get(), get(), get()) }
     viewModel { (caseId: String) -> AssessmentViewModel(caseId, get(), get(), get()) }
-    viewModel { HistoryViewModel(get(), get(), get()) }
+    viewModel { HistoryViewModel(get(), get(), get(), get()) }
 }

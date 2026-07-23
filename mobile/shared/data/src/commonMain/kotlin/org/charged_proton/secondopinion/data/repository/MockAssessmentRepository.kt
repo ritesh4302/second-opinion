@@ -74,4 +74,11 @@ class MockAssessmentRepository(
 
     override suspend fun getFeedback(assessmentId: String): Feedback? =
         mutex.withLock { feedbackByAssessmentId[assessmentId] }
+
+    override suspend fun deleteCase(caseId: String): Result<Unit> = runCatching {
+        mutex.withLock {
+            assessmentsByCaseId.remove(caseId)?.let { feedbackByAssessmentId.remove(it.id) }
+        }
+        caseRepository.deleteCase(caseId)
+    }
 }

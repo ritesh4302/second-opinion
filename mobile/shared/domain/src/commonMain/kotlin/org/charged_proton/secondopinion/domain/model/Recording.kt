@@ -11,4 +11,6 @@ data class Recording(
     val createdAtEpochMillis: Long,
     /** Speech duration after VAD trimming; upload metadata for the backend. */
     val durationMillis: Long = 0,
+    /** DPDP: the pharmacist attested the patient's consent before recording. */
+    val consentConfirmed: Boolean = false,
 )

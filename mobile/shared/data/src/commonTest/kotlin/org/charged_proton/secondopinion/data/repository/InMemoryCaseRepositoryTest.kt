@@ -66,4 +66,15 @@ class InMemoryCaseRepositoryTest {
 
         assertEquals(listOf(case), repository.observeCases().first())
     }
+
+    @Test
+    fun deleteCase_removesOnlyTargetCase() = runTest {
+        val a = repository.createCase(recording(1L))
+        val b = repository.createCase(recording(2L))
+
+        repository.deleteCase(a.id)
+
+        assertNull(repository.getCase(a.id))
+        assertEquals(listOf(b), repository.observeCases().first())
+    }
 }

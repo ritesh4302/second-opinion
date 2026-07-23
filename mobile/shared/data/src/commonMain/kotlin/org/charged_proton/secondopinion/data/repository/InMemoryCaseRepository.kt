@@ -47,4 +47,8 @@ class InMemoryCaseRepository : CaseRepository {
             byId + (caseId to case.copy(status = status))
         }
     }
+
+    override suspend fun deleteCase(caseId: String) {
+        cases.update { it - caseId }
+    }
 }

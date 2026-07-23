@@ -7,10 +7,12 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import org.charged_proton.secondopinion.R
 import org.charged_proton.secondopinion.domain.model.CaseStatus
+import org.charged_proton.secondopinion.domain.usecase.DeleteCaseUseCase
 import org.charged_proton.secondopinion.domain.usecase.ObserveCasesUseCase
 import org.charged_proton.secondopinion.domain.usecase.PlayRecordingUseCase
 import org.charged_proton.secondopinion.domain.usecase.StopPlaybackUseCase
 import org.charged_proton.secondopinion.presentation.history.HistoryViewModel
+import org.charged_proton.secondopinion.testutil.FakeAssessmentRepository
 import org.charged_proton.secondopinion.testutil.FakeAudioPlayer
 import org.charged_proton.secondopinion.testutil.FakeCaseRepository
 import org.charged_proton.secondopinion.testutil.testCase
@@ -31,6 +33,9 @@ class HistoryScreenTest {
 
     private val caseRepository = FakeCaseRepository()
     private val player = FakeAudioPlayer()
+    private val assessmentRepository = FakeAssessmentRepository().apply {
+        caseRepository = this@HistoryScreenTest.caseRepository
+    }
 
     private var openedCaseId: String? = null
 
@@ -41,6 +46,7 @@ class HistoryScreenTest {
             ObserveCasesUseCase(caseRepository),
             PlayRecordingUseCase(player),
             StopPlaybackUseCase(player),
+            DeleteCaseUseCase(assessmentRepository),
         )
         composeRule.setContent {
             SecondOpinionTheme {
@@ -93,5 +99,40 @@ class HistoryScreenTest {
         composeRule.onNodeWithText(string(R.string.stop_playback)).performClick()
 
         composeRule.onNodeWithText(string(R.string.play_recording)).assertIsDisplayed()
+    }
+
+    @Test
+    fun tapDelete_showsConfirmationDialog() {
+        caseRepository.cases.value = listOf(testCase(id = "case-1"))
+        setContent()
+
+        composeRule.onNodeWithText(string(R.string.delete_case)).performClick()
+
+        composeRule.onNodeWithText(string(R.string.delete_case_title)).assertIsDisplayed()
+        assertEquals(emptyList<String>(), assessmentRepository.deletedCaseIds)
+    }
+
+    @Test
+    fun confirmDelete_removesTheCase() {
+        caseRepository.cases.value = listOf(testCase(id = "case-1"))
+        setContent()
+
+        composeRule.onNodeWithText(string(R.string.delete_case)).performClick()
+        composeRule.onNodeWithText(string(R.string.delete_case_confirm)).performClick()
+
+        composeRule.onNodeWithText(string(R.string.history_empty)).assertIsDisplayed()
+        assertEquals(listOf("case-1"), assessmentRepository.deletedCaseIds)
+    }
+
+    @Test
+    fun cancelDelete_keepsTheCase() {
+        caseRepository.cases.value = listOf(testCase(id = "case-1"))
+        setContent()
+
+        composeRule.onNodeWithText(string(R.string.delete_case)).performClick()
+        composeRule.onNodeWithText(string(R.string.delete_case_cancel)).performClick()
+
+        composeRule.onNodeWithText(string(R.string.case_status_recorded)).assertIsDisplayed()
+        assertEquals(emptyList<String>(), assessmentRepository.deletedCaseIds)
     }
 }

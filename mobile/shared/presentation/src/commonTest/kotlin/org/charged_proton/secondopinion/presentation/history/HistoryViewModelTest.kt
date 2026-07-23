@@ -7,9 +7,11 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import org.charged_proton.secondopinion.domain.usecase.DeleteCaseUseCase
 import org.charged_proton.secondopinion.domain.usecase.ObserveCasesUseCase
 import org.charged_proton.secondopinion.domain.usecase.PlayRecordingUseCase
 import org.charged_proton.secondopinion.domain.usecase.StopPlaybackUseCase
+import org.charged_proton.secondopinion.presentation.testutil.FakeAssessmentRepository
 import org.charged_proton.secondopinion.presentation.testutil.FakeAudioPlayer
 import org.charged_proton.secondopinion.presentation.testutil.FakeCaseRepository
 import org.charged_proton.secondopinion.presentation.testutil.testRecording
@@ -18,12 +20,14 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class HistoryViewModelTest {
 
     private val caseRepository = FakeCaseRepository()
     private val player = FakeAudioPlayer()
+    private val assessmentRepository = FakeAssessmentRepository()
 
     @BeforeTest
     fun setUp() {
@@ -39,6 +43,7 @@ class HistoryViewModelTest {
         ObserveCasesUseCase(caseRepository),
         PlayRecordingUseCase(player),
         StopPlaybackUseCase(player),
+        DeleteCaseUseCase(assessmentRepository),
     )
 
     @Test
@@ -108,6 +113,77 @@ class HistoryViewModelTest {
 
             expectNoEvents()
             assertNull(vm.uiState.value.playingCaseId)
+        }
+    }
+
+    @Test
+    fun deleteRequested_asksForConfirmation() = runTest {
+        val case = caseRepository.createCase(testRecording())
+        val vm = viewModel()
+
+        vm.uiState.test {
+            awaitItem()
+
+            vm.onDeleteRequested(case)
+
+            assertEquals(case.id, awaitItem().confirmingDeleteCaseId)
+            assertTrue(assessmentRepository.deletedCaseIds.isEmpty())
+        }
+    }
+
+    @Test
+    fun deleteDismissed_closesConfirmationWithoutDeleting() = runTest {
+        val case = caseRepository.createCase(testRecording())
+        val vm = viewModel()
+
+        vm.uiState.test {
+            awaitItem()
+            vm.onDeleteRequested(case)
+            awaitItem()
+
+            vm.onDeleteDismissed()
+
+            assertNull(awaitItem().confirmingDeleteCaseId)
+            assertTrue(assessmentRepository.deletedCaseIds.isEmpty())
+        }
+    }
+
+    @Test
+    fun deleteConfirmed_deletesCaseAndClosesConfirmation() = runTest {
+        val case = caseRepository.createCase(testRecording())
+        val vm = viewModel()
+
+        vm.uiState.test {
+            awaitItem()
+            vm.onDeleteRequested(case)
+            awaitItem()
+
+            vm.onDeleteConfirmed()
+
+            assertNull(awaitItem().confirmingDeleteCaseId)
+            assertEquals(listOf(case.id), assessmentRepository.deletedCaseIds)
+        }
+    }
+
+    @Test
+    fun deleteConfirmed_whileCasePlaying_stopsPlaybackFirst() = runTest {
+        val case = caseRepository.createCase(testRecording())
+        val vm = viewModel()
+
+        vm.uiState.test {
+            awaitItem()
+            vm.onTogglePlayback(case)
+            assertEquals(case.id, awaitItem().playingCaseId)
+            vm.onDeleteRequested(case)
+            awaitItem()
+
+            vm.onDeleteConfirmed()
+
+            val state = expectMostRecentItem()
+            assertNull(state.playingCaseId)
+            assertNull(state.confirmingDeleteCaseId)
+            assertEquals(2, player.stopCalls) // once before play, once on delete
+            assertEquals(listOf(case.id), assessmentRepository.deletedCaseIds)
         }
     }
 }

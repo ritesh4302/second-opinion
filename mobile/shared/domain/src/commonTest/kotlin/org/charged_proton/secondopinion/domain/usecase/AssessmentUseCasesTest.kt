@@ -75,4 +75,23 @@ class AssessmentUseCasesTest {
         assertEquals(feedback, useCase("assessment-1"))
         assertNull(useCase("assessment-2"))
     }
+
+    @Test
+    fun deleteCase_success_deletesThroughRepository() = runTest {
+        val result = DeleteCaseUseCase(repository)("case-1")
+
+        assertTrue(result.isSuccess)
+        assertEquals(listOf("case-1"), repository.deletedCaseIds)
+    }
+
+    @Test
+    fun deleteCase_repositoryFails_returnsFailure() = runTest {
+        val boom = RuntimeException("network down")
+        repository.deleteError = boom
+
+        val result = DeleteCaseUseCase(repository)("case-1")
+
+        assertTrue(result.isFailure)
+        assertSame(boom, result.exceptionOrNull())
+    }
 }

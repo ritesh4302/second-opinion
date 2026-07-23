@@ -117,6 +117,10 @@ class FakeCaseRepository : CaseRepository {
             list.map { if (it.id == caseId) it.copy(status = status) else it }
         }
     }
+
+    override suspend fun deleteCase(caseId: String) {
+        cases.update { list -> list.filterNot { it.id == caseId } }
+    }
 }
 
 class FakeAuthClient : AuthClient {
@@ -160,6 +164,8 @@ class FakeAssessmentRepository : AssessmentRepository {
     val assessmentsByCaseId = mutableMapOf<String, Assessment>()
     val feedbackByAssessmentId = mutableMapOf<String, Feedback>()
     var submitError: Throwable? = null
+    var deleteError: Throwable? = null
+    val deletedCaseIds = mutableListOf<String>()
 
     override fun requestAssessment(caseId: String): Flow<AssessmentProgress> {
         requestedCaseIds += caseId
@@ -177,4 +183,11 @@ class FakeAssessmentRepository : AssessmentRepository {
 
     override suspend fun getFeedback(assessmentId: String): Feedback? =
         feedbackByAssessmentId[assessmentId]
+
+    override suspend fun deleteCase(caseId: String): Result<Unit> {
+        deleteError?.let { return Result.failure(it) }
+        deletedCaseIds += caseId
+        assessmentsByCaseId.remove(caseId)
+        return Result.success(Unit)
+    }
 }

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -37,6 +38,13 @@ fun HistoryScreen(
     viewModel: HistoryViewModel = koinViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+    if (uiState.confirmingDeleteCaseId != null) {
+        DeleteCaseDialog(
+            onConfirm = viewModel::onDeleteConfirmed,
+            onDismiss = viewModel::onDeleteDismissed,
+        )
+    }
 
     if (uiState.cases.isEmpty()) {
         Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -86,10 +94,36 @@ fun HistoryScreen(
                             )
                         )
                     }
+                    TextButton(onClick = { viewModel.onDeleteRequested(case) }) {
+                        Text(
+                            text = stringResource(R.string.delete_case),
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
                 }
             }
         }
     }
+}
+
+/** DPDP erasure: confirm before permanently deleting a case everywhere. */
+@Composable
+private fun DeleteCaseDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.delete_case_title)) },
+        text = { Text(stringResource(R.string.delete_case_message)) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(stringResource(R.string.delete_case_confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.delete_case_cancel))
+            }
+        },
+    )
 }
 
 private fun CaseStatus.toStringRes(): Int = when (this) {

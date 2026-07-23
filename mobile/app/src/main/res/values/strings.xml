@@ -32,6 +32,11 @@
     <string name="history_empty">No cases yet. Record symptoms to create one.</string>
     <string name="play_recording">Play</string>
     <string name="stop_playback">Stop</string>
+    <string name="delete_case">Delete</string>
+    <string name="delete_case_title">Delete this case?</string>
+    <string name="delete_case_message">This permanently deletes the recording, transcript and assessment from this device and the server.</string>
+    <string name="delete_case_confirm">Yes, delete</string>
+    <string name="delete_case_cancel">Cancel</string>
 
     <string name="assessment_in_progress">Analyzing… %1$s</string>
     <string name="section_summary">Symptom summary</string>

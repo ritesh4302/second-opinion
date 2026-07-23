@@ -109,4 +109,16 @@ class MockAssessmentRepositoryTest {
         assertTrue(result.isSuccess)
         assertEquals(feedback, repository.getFeedback("assessment-1"))
     }
+
+    @Test
+    fun deleteCase_removesCaseAndCachedAssessment() = runTest {
+        val case = newCase()
+        repository.requestAssessment(case.id).toList()
+
+        val result = repository.deleteCase(case.id)
+
+        assertTrue(result.isSuccess)
+        assertNull(caseRepository.getCase(case.id))
+        assertNull(repository.getAssessment(case.id))
+    }
 }
