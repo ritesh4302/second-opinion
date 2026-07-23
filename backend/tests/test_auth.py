@@ -2,7 +2,7 @@ import uuid
 
 from httpx import AsyncClient
 
-from tests.conftest import TEST_PHONE, auth_header
+from tests.conftest import TEST_PHONE, FakeStorage, auth_header
 from tests.test_assessments import seed_completed_recording
 from tests.test_recordings import upload_payload
 
@@ -49,6 +49,18 @@ async def test_recording_is_scoped_to_owner(client: AsyncClient) -> None:
         f"/v1/recordings/{recording_id}", headers=auth_header(uid="pharm-2")
     )
     assert response.status_code == 404
+
+
+async def test_delete_is_scoped_to_owner(client: AsyncClient, storage: FakeStorage) -> None:
+    recording_id = uuid.uuid4()
+    await client.post("/v1/recordings", **upload_payload(recording_id))
+
+    response = await client.delete(
+        f"/v1/recordings/{recording_id}", headers=auth_header(uid="pharm-2")
+    )
+    assert response.status_code == 404
+    # The owner's audio is untouched
+    assert f"recordings/{recording_id}.m4a" in storage.objects
 
 
 async def test_reupload_by_other_user_is_conflict(client: AsyncClient) -> None:

@@ -74,7 +74,12 @@ async def test_get_assessment_before_ready_is_404(client: AsyncClient) -> None:
     recording_id = uuid.uuid4()
     await client.post(
         "/v1/recordings",
-        data={"id": str(recording_id), "duration_ms": "4200", "locale": "hi-IN"},
+        data={
+            "id": str(recording_id),
+            "duration_ms": "4200",
+            "locale": "hi-IN",
+            "consent_confirmed": "true",
+        },
         files={"audio": ("symptom.m4a", b"fake-aac-bytes", "audio/mp4")},
     )
 

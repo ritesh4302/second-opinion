@@ -20,6 +20,10 @@ class Settings(BaseSettings):
 
     max_upload_bytes: int = 50 * 1024 * 1024
 
+    # DPDP storage limitation: the worker's daily retention sweep purges the
+    # audio blob + transcript rows of recordings older than this window.
+    retention_days: int = 30
+
     # Auth: Firebase phone sign-in; the API verifies Firebase ID tokens.
     # "fake" accepts "fake:<uid>[:<phone>]" bearer tokens for local dev/tests.
     auth_provider: str = "firebase"  # "firebase" | "fake"

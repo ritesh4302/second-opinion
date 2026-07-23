@@ -7,6 +7,7 @@ from app.settings import get_settings
 PROCESS_RECORDING_TASK = "pipeline.process_recording"
 PROCESS_TRANSCRIPT_TASK = "pipeline.process_transcript"
 PROCESS_EXTRACTION_TASK = "pipeline.process_extraction"
+RETENTION_SWEEP_TASK = "pipeline.retention_sweep"
 
 
 def make_celery() -> Celery:

@@ -17,6 +17,8 @@ x-app-env: &app-env
   # and the Firebase project id to verify real phone-auth ID tokens.
   SO_AUTH_PROVIDER: ${SO_AUTH_PROVIDER:-fake}
   SO_FIREBASE_PROJECT_ID: ${SO_FIREBASE_PROJECT_ID:-}
+  # DPDP retention window: the worker's daily sweep purges audio + transcripts
+  SO_RETENTION_DAYS: ${SO_RETENTION_DAYS:-30}
 
 services:
   api:
@@ -37,7 +39,8 @@ services:
 
   worker:
     build: .
-    command: uv run --no-dev celery -A worker.main worker --loglevel=info
+    # --beat: embedded scheduler for the daily retention sweep (single worker)
+    command: uv run --no-dev celery -A worker.main worker --beat --loglevel=info
     environment: *app-env
     depends_on:
       db:

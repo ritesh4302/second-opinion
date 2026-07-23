@@ -30,6 +30,10 @@ class FakeStorage:
     def get(self, key: str) -> bytes:
         return self.objects[key]
 
+    def delete(self, key: str) -> None:
+        # Mirrors S3: deleting a missing key is a no-op
+        self.objects.pop(key, None)
+
 
 class FakeQueue:
     def __init__(self) -> None:

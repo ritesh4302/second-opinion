@@ -66,6 +66,10 @@ class Recording(Base):
     audio_key: Mapped[str] = mapped_column(String(255))
     duration_ms: Mapped[int] = mapped_column(Integer)
     locale: Mapped[str] = mapped_column(String(35))
+    # DPDP: pharmacist attested the patient's consent before recording
+    consent_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Set by the retention sweep once the audio blob + transcripts are purged
+    audio_purged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     status: Mapped[RecordingStatus] = mapped_column(
         Enum(RecordingStatus, native_enum=False, length=20),
         default=RecordingStatus.UPLOADED,

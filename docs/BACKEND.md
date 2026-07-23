@@ -108,9 +108,10 @@ Rules:
 
 | Method | Path | Purpose |
 |---|---|---|
-| `POST` | `/v1/recordings` | Multipart upload: audio + metadata (client UUID, duration, locale, optional patient context). Returns `202` + job id |
+| `POST` | `/v1/recordings` | Multipart upload: audio + metadata (client UUID, duration, locale, `consent_confirmed` — must be true, else `422`). Returns `202` + job id |
 | `GET` | `/v1/recordings/{id}` | Pipeline status + stage |
 | `GET` | `/v1/recordings/{id}/assessment` | Final assessment: `symptom_summary` (comma-joined extracted symptoms), condition categories + confidence, red flags, medicine guidance (prescription drugs labeled), disclaimer |
+| `DELETE` | `/v1/recordings/{id}` | DPDP erasure: deletes the audio object + recording row (cascades to transcripts, extraction, assessment, feedback); owner-scoped; returns `204` |
 | `POST` | `/v1/assessments/{id}/feedback` | Pharmacist decision: accepted / rejected / overridden + optional note |
 | `GET` | `/v1/auth/me` | Validates the bearer token; auto-provisions the user (pharmacist role) on first call |
 | `GET` | `/healthz`, `/readyz` | Liveness/readiness probes |
@@ -129,7 +130,8 @@ Conventions:
 
 ```
 recordings      id (uuid, client-generated), audio_key, duration_ms, locale,
-                status, failure_stage, created_at, updated_at
+                consent_confirmed, status, failure_stage, audio_purged_at,
+                created_at, updated_at
 transcripts     id, recording_id FK, speaker_label, segment_index, text,
                 start_ms, end_ms, relevance_weight, discarded (bool)
 extractions     id, recording_id FK, symptoms (jsonb), age, gender, location,
@@ -222,8 +224,13 @@ even in POC because we handle health data (DPDP Act 2023 — see project doc §9
 - **TLS everywhere** — no plaintext transport, including internal service-to-object-storage.
 - **Encryption at rest** for object storage and database.
 - **No health data in logs** — log IDs and metadata, never transcripts or audio content.
-- **Retention policy hooks** — deletion of a recording cascades to audio, transcripts,
-  extractions, and assessments (design for DPDP erasure requests from day one).
+- **Consent, retention & erasure (DPDP, implemented)** — uploads require
+  `consent_confirmed=true` (`422` otherwise; flag persisted on the recording);
+  `DELETE /v1/recordings/{id}` erases the audio object and cascades the row deletion to
+  transcripts, extraction, assessment, and feedback; a daily Celery-beat sweep
+  (`worker/retention.py`) purges audio blobs + transcript rows older than
+  `SO_RETENTION_DAYS` (default 30; `audio_purged_at` marks done, keeps it idempotent) —
+  derived rows are kept for the pilot's quality loop until an erasure request.
 - **Secrets** via environment/secret manager only; never in code, images, or logs.
 - Auth (Phase 4, implemented): Firebase phone-auth ID tokens verified server-side
   (`app/auth.py` `TokenVerifier` port: `firebase` | `fake`); `users` table with role enum
@@ -276,19 +283,20 @@ Layout: `backend/` — uv project, Python 3.12, single package `app/` + `worker/
 | `backend/app/auth.py` | `TokenVerifier` port: `FirebaseTokenVerifier` (PyJWT + Google JWKS, needs `pyjwt[crypto]`) / `FakeTokenVerifier` (`fake:<uid>[:<phone>]` for dev/tests); `get_current_user` dependency auto-provisions `users` rows |
 | `backend/app/observability.py` | structlog config shared by API + worker: JSON (or console) rendering for structlog and stdlib records alike |
 | `backend/app/db.py` | `Base`, lazy async engine/session factory, `get_session` dependency |
-| `backend/app/models.py` | `User` (Firebase UID + phone + role), `Recording` (client-UUID PK, `owner_id` FK), `TranscriptSegment`, `Extraction`, `Assessment`, `Feedback`; `RecordingStatus` state machine (§2.2); jsonb with SQLite-compatible variant |
+| `backend/app/models.py` | `User` (Firebase UID + phone + role), `Recording` (client-UUID PK, `owner_id` FK, `consent_confirmed`, `audio_purged_at`), `TranscriptSegment`, `Extraction`, `Assessment`, `Feedback` (delete cascades from `Recording`); `RecordingStatus` state machine (§2.2); jsonb with SQLite-compatible variant |
 | `backend/app/schemas.py` | Pydantic response/request models; `UserOut`; `AssessmentOut.symptom_summary` is derived from the `Extraction` row at read time (not stored on `assessments`) |
 | `backend/app/storage.py` | `ObjectStorage` port + boto3 S3/MinIO impl (offloaded via `asyncio.to_thread`) |
 | `backend/app/queue.py` | Celery factory + `enqueue` dependency; API enqueues by task name, never imports worker code |
-| `backend/app/routers/` | `health` (healthz/readyz), `auth` (`/v1/auth/me`), `recordings` (upload/status/assessment, owner-scoped), `assessments` (feedback, owner-scoped) |
-| `backend/worker/main.py` | Celery worker entrypoint; speech + NLP + assessment stage tasks; structlog setup + per-task `recording_id` context binding |
+| `backend/app/routers/` | `health` (healthz/readyz), `auth` (`/v1/auth/me`), `recordings` (consent-gated upload / status / assessment / DELETE erasure, owner-scoped), `assessments` (feedback, owner-scoped) |
+| `backend/worker/main.py` | Celery worker entrypoint; speech + NLP + assessment stage tasks + daily retention-sweep beat schedule; structlog setup + per-task `recording_id` context binding |
 | `backend/worker/transcription.py` | `Transcriber` port; `SarvamTranscriber` (Batch API, `with_diarization=True`) + `FakeTranscriber` (dev/demo, `SO_SPEECH_PROVIDER=fake`) |
 | `backend/worker/nlp.py` | `NlpModel` port; `SarvamNlp` (sarvam-30b chat, prompted-JSON + Pydantic validation) + `FakeNlp` (`SO_NLP_PROVIDER=fake`); relevance + extraction prompts |
 | `backend/worker/assessment.py` | `Assessor` port; `SarvamAssessor` (triage prompt: conditions + confidence, red flags, medicine guidance with `prescription: true/false` per item for Schedule H/H1) + `FakeAssessor` (`SO_ASSESSMENT_PROVIDER=fake`); `PROMPT_VERSION` recorded per assessment |
 | `backend/worker/pipeline.py` | `run_speech_stage` (S3 download → transcribe → segments, `transcribing` → `filtering`) + `run_nlp_stage` (relevance weights/discard flags → `extracting` → Extraction row → `assessing`) + `run_assessment_stage` (extraction + kept transcript → Assessment row → `completed`); replace-on-retry persistence, failures set `failed` + stage; structured `stage_done`/`stage_failed` events with `duration_ms` |
+| `backend/worker/retention.py` | DPDP retention sweep: purges audio objects + transcript rows of recordings older than `SO_RETENTION_DAYS`; `audio_purged_at` marks purged rows (idempotent); scheduled daily via Celery beat |
 | `backend/worker/db.py` | Sync SQLAlchemy session for Celery tasks (psycopg driver on the same DB) |
 | `backend/alembic/` | Async migrations; URL from settings; initial schema revision applied |
-| `backend/tests/` | 41 pytest tests: API (fakes for storage/queue/token-verifier, httpx `ASGITransport`), auth (401s, `/me` provisioning, owner scoping) + speech/NLP/assessment worker stage tests (sync SQLite, stub providers, Sarvam + LLM-JSON parsers) |
+| `backend/tests/` | 50 pytest tests: API (fakes for storage/queue/token-verifier, httpx `ASGITransport`), auth (401s, `/me` provisioning, owner scoping), consent gate + erasure cascade + retention sweep, plus speech/NLP/assessment worker stage tests (sync SQLite, stub providers, Sarvam + LLM-JSON parsers) |
 | `backend/docker-compose.yml` | api + worker + Postgres 16 + Redis 7 + MinIO (host ports 9100/9101) + bucket init; api runs `alembic upgrade head` on start |
 | `.github/workflows/backend.yml` | CI: ruff check/format + pytest + Docker image build |
 

@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from collections.abc import Callable
 from typing import Annotated
@@ -29,11 +30,16 @@ async def upload_recording(
     id: Annotated[uuid.UUID, Form()],
     duration_ms: Annotated[int, Form(ge=0)],
     locale: Annotated[str, Form(min_length=2, max_length=35)],
+    consent_confirmed: Annotated[bool, Form()],
     session: SessionDep,
     storage: StorageDep,
     enqueue: EnqueueDep,
     user: CurrentUser,
 ) -> Recording:
+    # DPDP: no audio enters the system without the patient's attested consent
+    if not consent_confirmed:
+        raise Problem(422, "Consent required", "patient consent must be confirmed before upload")
+
     # Idempotency: the client-generated UUID is the primary key (BACKEND.md §3)
     existing = await session.get(Recording, id)
     if existing is not None:
@@ -57,6 +63,7 @@ async def upload_recording(
         audio_key=audio_key,
         duration_ms=duration_ms,
         locale=locale,
+        consent_confirmed=consent_confirmed,
         status=RecordingStatus.QUEUED,
     )
     session.add(recording)
@@ -64,6 +71,25 @@ async def upload_recording(
 
     enqueue(str(id))
     return recording
+
+
+@router.delete("/{recording_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_recording(
+    recording_id: uuid.UUID,
+    session: SessionDep,
+    storage: StorageDep,
+    user: CurrentUser,
+) -> None:
+    """DPDP erasure: removes the audio blob and every derived row (cascade)."""
+    recording = await session.get(Recording, recording_id)
+    # Another user's recording looks like 404 (no existence leak)
+    if recording is None or recording.owner_id != user.id:
+        raise Problem(404, "Not found", f"recording {recording_id} does not exist")
+
+    if recording.audio_purged_at is None:
+        await asyncio.to_thread(storage.delete, recording.audio_key)
+    await session.delete(recording)
+    await session.commit()
 
 
 @router.get("/{recording_id}", response_model=RecordingOut)

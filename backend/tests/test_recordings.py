@@ -1,13 +1,20 @@
 import uuid
 
 from httpx import AsyncClient
+from sqlalchemy import select
 
+from app.models import Assessment, Recording, TranscriptSegment
 from tests.conftest import FakeQueue, FakeStorage
 
 
 def upload_payload(recording_id: uuid.UUID) -> dict:
     return {
-        "data": {"id": str(recording_id), "duration_ms": "4200", "locale": "hi-IN"},
+        "data": {
+            "id": str(recording_id),
+            "duration_ms": "4200",
+            "locale": "hi-IN",
+            "consent_confirmed": "true",
+        },
         "files": {"audio": ("symptom.m4a", b"fake-aac-bytes", "audio/mp4")},
     }
 
@@ -78,3 +85,86 @@ async def test_get_unknown_recording_is_404_problem(client: AsyncClient) -> None
     assert response.status_code == 404
     assert response.headers["content-type"] == "application/problem+json"
     assert response.json()["title"] == "Not found"
+
+
+async def test_upload_without_consent_is_rejected(
+    client: AsyncClient, storage: FakeStorage, queue: FakeQueue
+) -> None:
+    payload = upload_payload(uuid.uuid4())
+    payload["data"]["consent_confirmed"] = "false"
+    response = await client.post("/v1/recordings", **payload)
+
+    assert response.status_code == 422
+    assert response.headers["content-type"] == "application/problem+json"
+    assert response.json()["title"] == "Consent required"
+    assert storage.objects == {}
+    assert queue.enqueued == []
+
+
+async def test_upload_missing_consent_field_is_422(client: AsyncClient) -> None:
+    payload = upload_payload(uuid.uuid4())
+    del payload["data"]["consent_confirmed"]
+    response = await client.post("/v1/recordings", **payload)
+
+    assert response.status_code == 422
+
+
+async def test_upload_persists_consent_flag(client: AsyncClient, session_factory) -> None:
+    recording_id = uuid.uuid4()
+    await client.post("/v1/recordings", **upload_payload(recording_id))
+
+    async with session_factory() as session:
+        recording = await session.get(Recording, recording_id)
+    assert recording is not None
+    assert recording.consent_confirmed is True
+
+
+async def test_delete_removes_audio_and_cascades(
+    client: AsyncClient, storage: FakeStorage, session_factory
+) -> None:
+    recording_id = uuid.uuid4()
+    await client.post("/v1/recordings", **upload_payload(recording_id))
+    # Seed derived pipeline rows to prove the cascade wipes them too
+    async with session_factory() as session:
+        session.add(
+            TranscriptSegment(
+                recording_id=recording_id,
+                speaker_label="0",
+                segment_index=0,
+                text="मुझे बुखार है।",
+                start_ms=0,
+                end_ms=1500,
+            )
+        )
+        session.add(
+            Assessment(
+                recording_id=recording_id,
+                conditions=[],
+                red_flags=[],
+                otc_guidance=[],
+                model_id="stub-model",
+                prompt_version="v0",
+            )
+        )
+        await session.commit()
+
+    response = await client.delete(f"/v1/recordings/{recording_id}")
+
+    assert response.status_code == 204
+    assert storage.objects == {}
+    async with session_factory() as session:
+        assert await session.get(Recording, recording_id) is None
+        transcripts = await session.execute(
+            select(TranscriptSegment).where(TranscriptSegment.recording_id == recording_id)
+        )
+        assert transcripts.scalars().all() == []
+        assessments = await session.execute(
+            select(Assessment).where(Assessment.recording_id == recording_id)
+        )
+        assert assessments.scalars().all() == []
+
+
+async def test_delete_unknown_recording_is_404(client: AsyncClient) -> None:
+    response = await client.delete(f"/v1/recordings/{uuid.uuid4()}")
+    assert response.status_code == 404
+    assert response.headers["content-type"] == "application/problem+json"

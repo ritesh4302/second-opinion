@@ -15,6 +15,7 @@ from app.queue import (
     PROCESS_EXTRACTION_TASK,
     PROCESS_RECORDING_TASK,
     PROCESS_TRANSCRIPT_TASK,
+    RETENTION_SWEEP_TASK,
     make_celery,
 )
 from app.settings import get_settings
@@ -23,11 +24,20 @@ from worker.assessment import get_assessor
 from worker.db import get_session_factory
 from worker.nlp import get_nlp_model
 from worker.pipeline import run_assessment_stage, run_nlp_stage, run_speech_stage
+from worker.retention import run_retention_sweep
 from worker.transcription import get_transcriber
 
 logger = logging.getLogger(__name__)
 
 celery_app = make_celery()
+
+# DPDP retention: sweep daily (worker runs with embedded beat, `worker --beat`)
+celery_app.conf.beat_schedule = {
+    "retention-sweep-daily": {
+        "task": RETENTION_SWEEP_TASK,
+        "schedule": 24 * 60 * 60,
+    }
+}
 
 
 @signals.setup_logging.connect
@@ -96,3 +106,14 @@ def process_extraction(recording_id: str) -> str:
         assessor=get_assessor(),
     )
     return recording_id
+
+
+@celery_app.task(name=RETENTION_SWEEP_TASK)
+def retention_sweep() -> int:
+    days = get_settings().retention_days
+    logger.info("running retention sweep (window: %d days)", days)
+    return run_retention_sweep(
+        session_factory=get_session_factory(),
+        storage=get_storage(),
+        retention_days=days,
+    )

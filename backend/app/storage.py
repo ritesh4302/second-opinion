@@ -17,6 +17,10 @@ class ObjectStorage(Protocol):
     # Sync on purpose: only the Celery worker (sync context) reads audio back.
     def get(self, key: str) -> bytes: ...
 
+    # Sync so the worker's retention sweep can call it directly; the async
+    # API offloads it via asyncio.to_thread. Deleting a missing key is a no-op.
+    def delete(self, key: str) -> None: ...
+
 
 class S3ObjectStorage:
     """boto3 is sync; calls are offloaded so the event loop never blocks."""
@@ -50,6 +54,10 @@ class S3ObjectStorage:
     def get(self, key: str) -> bytes:
         response = self._client.get_object(Bucket=self._bucket, Key=key)
         return response["Body"].read()
+
+    def delete(self, key: str) -> None:
+        # S3 DeleteObject succeeds even when the key is already gone
+        self._client.delete_object(Bucket=self._bucket, Key=key)
 
 
 @lru_cache
