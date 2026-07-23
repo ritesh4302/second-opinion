@@ -112,14 +112,18 @@ Rules:
 | `GET` | `/v1/recordings/{id}` | Pipeline status + stage |
 | `GET` | `/v1/recordings/{id}/assessment` | Final assessment: `symptom_summary` (comma-joined extracted symptoms), condition categories + confidence, red flags, medicine guidance (prescription drugs labeled), disclaimer |
 | `POST` | `/v1/assessments/{id}/feedback` | Pharmacist decision: accepted / rejected / overridden + optional note |
+| `GET` | `/v1/auth/me` | Validates the bearer token; auto-provisions the user (pharmacist role) on first call |
 | `GET` | `/healthz`, `/readyz` | Liveness/readiness probes |
 
 Conventions:
 - URL-versioned API (`/v1/`); breaking changes require a new version.
 - JSON everywhere except the multipart upload; errors follow RFC 9457 (Problem Details).
-- Idempotency: `POST /v1/recordings` deduplicates on the client-generated recording UUID.
-- No auth in POC (project decision D6) — but every endpoint is designed to take an
-  `Authorization` header later without URL changes.
+- Idempotency: `POST /v1/recordings` deduplicates on the client-generated recording UUID
+  (per owner — another user re-uploading the same UUID gets `409`).
+- Auth (Phase 4): Firebase phone sign-in; the API verifies Firebase ID tokens
+  (`Authorization: Bearer`) against Google's JWKS and scopes recordings/assessments to
+  their owner (cross-user access reads as `404`). `SO_AUTH_PROVIDER=fake` accepts
+  `fake:<uid>[:<phone>]` tokens for local dev; health probes stay open.
 
 ## 4. Data Model (initial)
 
@@ -221,8 +225,10 @@ even in POC because we handle health data (DPDP Act 2023 — see project doc §9
 - **Retention policy hooks** — deletion of a recording cascades to audio, transcripts,
   extractions, and assessments (design for DPDP erasure requests from day one).
 - **Secrets** via environment/secret manager only; never in code, images, or logs.
-- Auth design placeholder: token-based (`Authorization: Bearer`), role claims for
-  pharmacist/patient/doctor (open-ended users, decision D5) — added in Phase 4.
+- Auth (Phase 4, implemented): Firebase phone-auth ID tokens verified server-side
+  (`app/auth.py` `TokenVerifier` port: `firebase` | `fake`); `users` table with role enum
+  (pharmacist/admin; patient/doctor roles later per decision D5); recordings carry
+  `owner_id` and all data endpoints require the owner's token.
 
 ## 9. Environments & Deployment
 
@@ -267,13 +273,14 @@ Layout: `backend/` — uv project, Python 3.12, single package `app/` + `worker/
 | `backend/pyproject.toml` | Dependencies (FastAPI, SQLAlchemy 2 async, Alembic, Celery, boto3), ruff + pytest config |
 | `backend/app/main.py` | `create_app()` factory; RFC 9457 problem-details handler; router registration; `http_request` access-log middleware |
 | `backend/app/settings.py` | `pydantic-settings`, `SO_`-prefixed env vars, working defaults for the compose stack |
+| `backend/app/auth.py` | `TokenVerifier` port: `FirebaseTokenVerifier` (PyJWT + Google JWKS, needs `pyjwt[crypto]`) / `FakeTokenVerifier` (`fake:<uid>[:<phone>]` for dev/tests); `get_current_user` dependency auto-provisions `users` rows |
 | `backend/app/observability.py` | structlog config shared by API + worker: JSON (or console) rendering for structlog and stdlib records alike |
 | `backend/app/db.py` | `Base`, lazy async engine/session factory, `get_session` dependency |
-| `backend/app/models.py` | `Recording` (client-UUID PK), `TranscriptSegment`, `Extraction`, `Assessment`, `Feedback`; `RecordingStatus` state machine (§2.2); jsonb with SQLite-compatible variant |
-| `backend/app/schemas.py` | Pydantic response/request models; `AssessmentOut.symptom_summary` is derived from the `Extraction` row at read time (not stored on `assessments`) |
+| `backend/app/models.py` | `User` (Firebase UID + phone + role), `Recording` (client-UUID PK, `owner_id` FK), `TranscriptSegment`, `Extraction`, `Assessment`, `Feedback`; `RecordingStatus` state machine (§2.2); jsonb with SQLite-compatible variant |
+| `backend/app/schemas.py` | Pydantic response/request models; `UserOut`; `AssessmentOut.symptom_summary` is derived from the `Extraction` row at read time (not stored on `assessments`) |
 | `backend/app/storage.py` | `ObjectStorage` port + boto3 S3/MinIO impl (offloaded via `asyncio.to_thread`) |
 | `backend/app/queue.py` | Celery factory + `enqueue` dependency; API enqueues by task name, never imports worker code |
-| `backend/app/routers/` | `health` (healthz/readyz), `recordings` (upload/status/assessment), `assessments` (feedback) |
+| `backend/app/routers/` | `health` (healthz/readyz), `auth` (`/v1/auth/me`), `recordings` (upload/status/assessment, owner-scoped), `assessments` (feedback, owner-scoped) |
 | `backend/worker/main.py` | Celery worker entrypoint; speech + NLP + assessment stage tasks; structlog setup + per-task `recording_id` context binding |
 | `backend/worker/transcription.py` | `Transcriber` port; `SarvamTranscriber` (Batch API, `with_diarization=True`) + `FakeTranscriber` (dev/demo, `SO_SPEECH_PROVIDER=fake`) |
 | `backend/worker/nlp.py` | `NlpModel` port; `SarvamNlp` (sarvam-30b chat, prompted-JSON + Pydantic validation) + `FakeNlp` (`SO_NLP_PROVIDER=fake`); relevance + extraction prompts |
@@ -281,7 +288,7 @@ Layout: `backend/` — uv project, Python 3.12, single package `app/` + `worker/
 | `backend/worker/pipeline.py` | `run_speech_stage` (S3 download → transcribe → segments, `transcribing` → `filtering`) + `run_nlp_stage` (relevance weights/discard flags → `extracting` → Extraction row → `assessing`) + `run_assessment_stage` (extraction + kept transcript → Assessment row → `completed`); replace-on-retry persistence, failures set `failed` + stage; structured `stage_done`/`stage_failed` events with `duration_ms` |
 | `backend/worker/db.py` | Sync SQLAlchemy session for Celery tasks (psycopg driver on the same DB) |
 | `backend/alembic/` | Async migrations; URL from settings; initial schema revision applied |
-| `backend/tests/` | 33 pytest tests: API (fakes for storage/queue, httpx `ASGITransport`) + speech/NLP/assessment worker stage tests (sync SQLite, stub providers, Sarvam + LLM-JSON parsers) |
+| `backend/tests/` | 41 pytest tests: API (fakes for storage/queue/token-verifier, httpx `ASGITransport`), auth (401s, `/me` provisioning, owner scoping) + speech/NLP/assessment worker stage tests (sync SQLite, stub providers, Sarvam + LLM-JSON parsers) |
 | `backend/docker-compose.yml` | api + worker + Postgres 16 + Redis 7 + MinIO (host ports 9100/9101) + bucket init; api runs `alembic upgrade head` on start |
 | `.github/workflows/backend.yml` | CI: ruff check/format + pytest + Docker image build |
 

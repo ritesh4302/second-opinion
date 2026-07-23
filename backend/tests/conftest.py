@@ -5,10 +5,19 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
+from app.auth import FakeTokenVerifier, get_token_verifier
 from app.db import Base, get_session
 from app.main import create_app
 from app.queue import get_enqueue
 from app.storage import get_storage
+
+TEST_UID = "pharm-1"
+TEST_PHONE = "+919876543210"
+
+
+def auth_header(uid: str = TEST_UID, phone: str = TEST_PHONE) -> dict[str, str]:
+    """Bearer header accepted by FakeTokenVerifier ("fake:<uid>:<phone>")."""
+    return {"Authorization": f"Bearer fake:{uid}:{phone}"}
 
 
 class FakeStorage:
@@ -68,7 +77,10 @@ async def client(
     app.dependency_overrides[get_session] = override_get_session
     app.dependency_overrides[get_storage] = lambda: storage
     app.dependency_overrides[get_enqueue] = lambda: queue
+    app.dependency_overrides[get_token_verifier] = FakeTokenVerifier
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(
+        transport=transport, base_url="http://test", headers=auth_header()
+    ) as client:
         yield client

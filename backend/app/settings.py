@@ -20,6 +20,11 @@ class Settings(BaseSettings):
 
     max_upload_bytes: int = 50 * 1024 * 1024
 
+    # Auth: Firebase phone sign-in; the API verifies Firebase ID tokens.
+    # "fake" accepts "fake:<uid>[:<phone>]" bearer tokens for local dev/tests.
+    auth_provider: str = "firebase"  # "firebase" | "fake"
+    firebase_project_id: str = ""
+
     log_format: str = "json"  # "json" | "console" (human-readable for local dev)
 
     # Speech stage (worker). "fake" runs the pipeline without external calls.

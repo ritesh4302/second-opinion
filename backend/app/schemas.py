@@ -3,7 +3,16 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
-from app.models import FeedbackDecision, RecordingStatus
+from app.models import FeedbackDecision, RecordingStatus, UserRole
+
+
+class UserOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    phone_number: str | None
+    role: UserRole
+    created_at: datetime
 
 
 class RecordingOut(BaseModel):

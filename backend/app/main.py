@@ -5,7 +5,7 @@ from fastapi import FastAPI, HTTPException, Request
 
 from app.observability import configure_logging
 from app.problems import problem_handler
-from app.routers import assessments, health, recordings
+from app.routers import assessments, auth, health, recordings
 
 access_logger = structlog.get_logger("app.http")
 
@@ -19,6 +19,7 @@ def create_app() -> FastAPI:
     )
     app.add_exception_handler(HTTPException, problem_handler)
     app.include_router(health.router)
+    app.include_router(auth.router)
     app.include_router(recordings.router)
     app.include_router(assessments.router)
 

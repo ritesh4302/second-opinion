@@ -34,11 +34,35 @@ class FeedbackDecision(enum.StrEnum):
     OVERRIDDEN = "overridden"
 
 
+class UserRole(enum.StrEnum):
+    PHARMACIST = "pharmacist"
+    ADMIN = "admin"
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    # Firebase Auth UID (phone sign-in); the stable identity across devices
+    firebase_uid: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    phone_number: Mapped[str | None] = mapped_column(String(20), default=None)
+    role: Mapped[UserRole] = mapped_column(
+        Enum(UserRole, native_enum=False, length=20), default=UserRole.PHARMACIST
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    recordings: Mapped[list["Recording"]] = relationship(back_populates="owner")
+
+
 class Recording(Base):
     __tablename__ = "recordings"
 
     # Client-generated UUID (idempotency key for uploads)
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    # Pharmacist who uploaded the recording (nullable for pre-auth rows)
+    owner_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), default=None, index=True
+    )
     audio_key: Mapped[str] = mapped_column(String(255))
     duration_ms: Mapped[int] = mapped_column(Integer)
     locale: Mapped[str] = mapped_column(String(35))
@@ -53,6 +77,7 @@ class Recording(Base):
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
     )
 
+    owner: Mapped["User | None"] = relationship(back_populates="recordings")
     transcripts: Mapped[list["TranscriptSegment"]] = relationship(
         back_populates="recording", cascade="all, delete-orphan"
     )

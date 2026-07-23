@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Form, Response, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import CurrentUser
 from app.db import get_session
 from app.models import Assessment, Extraction, Recording, RecordingStatus
 from app.problems import Problem
@@ -31,10 +32,13 @@ async def upload_recording(
     session: SessionDep,
     storage: StorageDep,
     enqueue: EnqueueDep,
+    user: CurrentUser,
 ) -> Recording:
     # Idempotency: the client-generated UUID is the primary key (BACKEND.md §3)
     existing = await session.get(Recording, id)
     if existing is not None:
+        if existing.owner_id != user.id:
+            raise Problem(409, "Conflict", f"recording {id} belongs to another user")
         response.status_code = status.HTTP_200_OK
         return existing
 
@@ -49,6 +53,7 @@ async def upload_recording(
 
     recording = Recording(
         id=id,
+        owner_id=user.id,
         audio_key=audio_key,
         duration_ms=duration_ms,
         locale=locale,
@@ -65,9 +70,11 @@ async def upload_recording(
 async def get_recording(
     recording_id: uuid.UUID,
     session: SessionDep,
+    user: CurrentUser,
 ) -> Recording:
     recording = await session.get(Recording, recording_id)
-    if recording is None:
+    # Another user's recording looks like 404 (no existence leak)
+    if recording is None or recording.owner_id != user.id:
         raise Problem(404, "Not found", f"recording {recording_id} does not exist")
     return recording
 
@@ -76,9 +83,10 @@ async def get_recording(
 async def get_assessment(
     recording_id: uuid.UUID,
     session: SessionDep,
+    user: CurrentUser,
 ) -> AssessmentOut:
     recording = await session.get(Recording, recording_id)
-    if recording is None:
+    if recording is None or recording.owner_id != user.id:
         raise Problem(404, "Not found", f"recording {recording_id} does not exist")
     result = await session.execute(
         select(Assessment).where(Assessment.recording_id == recording_id)
