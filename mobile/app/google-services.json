@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "890735966706",
+    "project_id": "pharmacy-opinion",
+    "storage_bucket": "pharmacy-opinion.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:890735966706:android:8e1e3fc56980d4666e536b",
+        "android_client_info": {
+          "package_name": "org.pharmacy.secondopinion"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDPF-oYkRJY_4FWs3xNN3Uv5oB_lzSEWyk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
