@@ -5,13 +5,15 @@
 > For product context (problem, solution, decisions D1–D6, roadmap) see
 > `docs/PROJECT_DOCUMENTATION.md`.
 
-**Last updated:** 2026-07-23
+**Last updated:** 2026-07-24
 **Status:** KMM layer-per-module; full case → assessment → decision flow **wired to the real
 backend** (Ktor multipart upload → status polling → assessment fetch → feedback POST, verified
 end-to-end against the docker-compose stack); on-device VAD silence trimming (Silero via
 sherpa-onnx) in the recording pipeline; consent step before recording and recording playback
-from history (Phase 1 capture POC complete); phone-OTP login gate with bearer-token backend
-auth (fake OTP adapter — Firebase phone auth pending a Firebase project); DPDP flows:
+from history (Phase 1 capture POC complete); Firebase Google Sign-In login gate with
+bearer-token backend auth (real Credential Manager → Firebase Auth SDK adapter
+`FirebaseAuthClient`, selected at runtime once google-services.json is provisioned;
+fake Google adapter otherwise); DPDP flows:
 consent flag sent with the upload + per-case deletion from history (backend erasure +
 local audio cleanup); cases still in-memory (SQLDelight pending)
 
@@ -90,13 +92,15 @@ The KMM migration (steps 1–3 of §10) is done. The entry module is still named
 mobile/
 ├── app/                                # :app — Android entry point
 │   └── src/main/java/org/charged_proton/secondopinion/
-│       ├── SecondOpinionApp.kt         # Application — starts Koin
+│       ├── SecondOpinionApp.kt         # Application — starts Koin, registers activity tracker
 │       ├── MainActivity.kt             # Sets Compose content, hosts AppNavHost
+│       ├── auth/FirebaseAuthClient.kt  # Credential Manager → Firebase Auth adapter
+│       ├── auth/CurrentActivityTracker.kt  # resumed-Activity provider for Credential Manager
 │       ├── di/AppModule.kt             # Koin module: recorder, repos, use cases, ViewModels
 │       └── ui/
 │           ├── navigation/AppNavHost.kt        # record / history / assessment/{caseId}
 │           ├── navigation/AuthGate.kt          # signed out → LoginScreen, signed in → AppNavHost
-│           ├── login/LoginScreen.kt            # phone number → OTP → verify
+│           ├── login/LoginScreen.kt            # "Sign in with Google" button
 │           ├── record/RecordScreen.kt          # consent dialog, Speak/Stop, permission,
 │           │                                   #   → assessment/history
 │           ├── assessment/AssessmentScreen.kt  # progress → result → pharmacist decision
@@ -106,7 +110,7 @@ mobile/
 └── shared/
     ├── domain/                         # :shared:domain — pure Kotlin commonMain
     │   └── .../domain/
-    │       ├── auth/AuthClient.kt      # AuthState + AuthClient port (phone-OTP sign-in)
+    │       ├── auth/AuthClient.kt      # AuthState + AuthClient port (Firebase Google sign-in)
     │       ├── model/                  # Recording, SymptomCase, Assessment,
     │       │                           #   AssessmentProgress, Feedback
     │       ├── platform/               # AudioRecorder, AudioPlayer (port interfaces)
@@ -122,7 +126,7 @@ mobile/
     │   │   ├── player/MediaPlayerAudioPlayer.kt    # MediaPlayer impl of AudioPlayer
     │   │   └── recorder/VadTrimmingAudioRecorder.kt
     │   └── src/commonMain/.../data/
-    │       ├── auth/                   # AuthTokenStore port, FakeOtpAuthClient (dev OTP)
+    │       ├── auth/                   # AuthTokenStore port, FakeGoogleAuthClient (dev)
     │       ├── mock/MockAssessmentScenarios.kt  # canned assessments (kept for tests/demo)
     │       ├── platform/                # AudioFileReader + AudioFileDeleter (fun interface ports)
     │       ├── remote/                 # BackendApi (Ktor + bearer token), DTOs + mappers
@@ -131,7 +135,7 @@ mobile/
     └── presentation/                   # :shared:presentation — commonMain ViewModels
         └── .../presentation/
             ├── auth/AuthViewModel.kt   # exposes AuthState for the login gate
-            ├── login/                  # LoginViewModel + LoginUiState (phone → OTP steps)
+            ├── login/                  # LoginViewModel + LoginUiState (single sign-in step)
             ├── symptom/                # SymptomViewModel + SymptomUiState (consent step,
             │                           #   creates case on stop)
             ├── assessment/             # AssessmentViewModel + AssessmentUiState
@@ -301,11 +305,13 @@ receives a ready-to-use `AudioRecorder` or a failure.
 
 | File | Responsibility |
 |---|---|
-| `mobile/app/.../SecondOpinionApp.kt` | `Application`; starts Koin with `appModule` |
-| `mobile/app/.../di/AppModule.kt` | Koin bindings: recorder + player ports, auth (`SharedPreferencesAuthTokenStore`, `FakeOtpAuthClient` behind `AuthClient`), `InMemoryCaseRepository`, `BackendApi` (base URL from `BuildConfig.BACKEND_BASE_URL`, token from `AuthClient`, 401 → sign-out) + `BackendAssessmentRepository`, use-case factories, five ViewModels (`AssessmentViewModel` takes `caseId` via `parametersOf`) |
+| `mobile/app/.../SecondOpinionApp.kt` | `Application`; starts Koin with `appModule`, registers `CurrentActivityTracker` as activity-lifecycle callbacks |
+| `mobile/app/.../auth/FirebaseAuthClient.kt` | Production `AuthClient`: Credential Manager account picker (`GetGoogleIdOption` with the `default_web_client_id` generated by the google-services plugin) → `GoogleIdTokenCredential` → `FirebaseAuth.signInWithCredential` → Firebase ID token as the bearer; session persisted by Firebase Auth itself; dismissed picker → `SignInCancelledException`; sign-out also clears Credential Manager state |
+| `mobile/app/.../auth/CurrentActivityTracker.kt` | `ActivityLifecycleCallbacks` holding a `WeakReference` to the resumed Activity — Credential Manager needs an Activity (not the application context) to show its UI |
+| `mobile/app/.../di/AppModule.kt` | Koin bindings: recorder + player ports, auth (`SharedPreferencesAuthTokenStore`; `AuthClient` = `FirebaseAuthClient` when a `FirebaseApp` is initialised, i.e. google-services.json is present, else `FakeGoogleAuthClient`), `InMemoryCaseRepository`, `BackendApi` (base URL from `BuildConfig.BACKEND_BASE_URL`, token from `AuthClient`, 401 → sign-out) + `BackendAssessmentRepository`, use-case factories, five ViewModels (`AssessmentViewModel` takes `caseId` via `parametersOf`) |
 | `mobile/app/.../MainActivity.kt` | Sets Compose content; hosts `AuthGate` inside `Scaffold` |
 | `mobile/app/.../ui/navigation/AuthGate.kt` | Login gate: observes `AuthViewModel.authState` — signed out → `LoginScreen`, signed in → `AppNavHost` |
-| `mobile/app/.../ui/login/LoginScreen.kt` | Phone sign-in: phone-number entry → "Send code" → OTP entry → "Verify and sign in"; localized error messages, change-number back step |
+| `mobile/app/.../ui/login/LoginScreen.kt` | Google sign-in: a single "Sign in with Google" button launches the account picker; localized error message on failure |
 | `mobile/app/.../ui/navigation/AppNavHost.kt` | Navigation Compose graph: `record` (start), `history`, `assessment/{caseId}` |
 | `mobile/app/.../ui/record/RecordScreen.kt` | Patient-consent `AlertDialog` (tap-to-confirm before recording), Speak/Stop, `RECORD_AUDIO` permission, "Get assessment" (when case created), "View history" |
 | `mobile/app/.../ui/assessment/AssessmentScreen.kt` | Pipeline progress spinner, assessment result (referral banner → summary → conditions → medicine guidance with prescription badges → disclaimer), accept/reject/override decision bar |
@@ -313,12 +319,12 @@ receives a ready-to-use `AudioRecorder` or a failure.
 | `mobile/app/.../ui/theme/*` | Material3 theme, dynamic color (Android 12+), dark/light |
 | `mobile/app/src/main/res/values/strings.xml` | UI strings (login/record/consent/assessment/history/playback/deletion/decision/case-status) |
 | `mobile/app/src/main/AndroidManifest.xml` | `RECORD_AUDIO`, Application class, single launcher activity |
-| `mobile/shared/domain/.../auth/AuthClient.kt` | `AuthClient` port (requestOtp/verifyOtp/currentToken/signOut + `authState`), `AuthState` (Unknown/SignedOut/SignedIn), `AuthUser`, auth exceptions |
+| `mobile/shared/domain/.../auth/AuthClient.kt` | `AuthClient` port (signIn/currentToken/signOut + `authState`); production flow: Credential Manager (Google) → Firebase Auth SDK → Firebase ID token as the bearer; `AuthState` (Unknown/SignedOut/SignedIn), `AuthUser` (uid + email + display name), `SignInCancelledException` |
 | `mobile/shared/domain/.../model/*` | `Recording` (incl. `consentConfirmed`), `SymptomCase` + `CaseStatus`, `Assessment` (+`ConditionHypothesis`, `RedFlag`, `OtcAdvice`), `AssessmentProgress` + `PipelineStage`, `Feedback` + `PharmacistDecision` |
 | `mobile/shared/domain/.../platform/AudioRecorder.kt` | Port interface: `start()`, `suspend stop(): Recording?` (post-processing happens in stop), `release()`, `isRecording` |
 | `mobile/shared/domain/.../platform/AudioPlayer.kt` | Port interface: `play(filePath, onCompleted)` (throws if playback cannot start), `stop()`; one playback at a time |
 | `mobile/shared/domain/.../repository/*` | Ports: `CaseRepository` (observe/create/get/updateStatus/delete), `AssessmentRepository` (requestAssessment `Flow`, getAssessment, submit/getFeedback, deleteCase) |
-| `mobile/shared/domain/.../usecase/*` | Auth (ObserveAuthState/RequestOtp/VerifyOtp), recording (Start/Stop/Release), playback (Play/Stop), case (Create/Observe/Get/Delete), assessment (Request/Get), feedback (Submit/Get) use cases |
+| `mobile/shared/domain/.../usecase/*` | Auth (ObserveAuthState/SignIn), recording (Start/Stop/Release), playback (Play/Stop), case (Create/Observe/Get/Delete), assessment (Request/Get), feedback (Submit/Get) use cases |
 | `mobile/shared/data/.../recorder/VadTrimmingAudioRecorder.kt` | `AudioRecord` impl of the port (androidMain): captures 16 kHz mono PCM on a thread; `stop()` trims silence via VAD and writes `symptom_recording_<ts>.m4a` to `cacheDir` (falls back to the full buffer when no speech detected) |
 | `mobile/shared/data/.../audio/SileroVadTrimmer.kt` | Silero VAD via sherpa-onnx: finds the padded speech range; model `silero_vad.onnx` loaded from app assets |
 | `mobile/shared/data/.../audio/AacM4aEncoder.kt` | Mono 16-bit PCM → AAC-LC/.m4a via `MediaCodec` + `MediaMuxer` |
@@ -332,17 +338,18 @@ receives a ready-to-use `AudioRecorder` or a failure.
 | `mobile/shared/data/.../repository/MockAssessmentRepository.kt` | Mock kept for tests/demo: simulates pipeline with staged delays, rotates canned scenarios (no longer wired in `AppModule`) |
 | `mobile/shared/data/.../mock/MockAssessmentScenarios.kt` | Three canned assessments: viral URI, gastroenteritis (incl. a prescription-labeled medicine), red-flag chest pain (no OTC, urgent referral) |
 | `mobile/shared/data/.../auth/AuthTokenStore.kt` (+ `SharedPreferencesAuthTokenStore`) | Token persistence port; Android impl stores the session token in app-private SharedPreferences |
-| `mobile/shared/data/.../auth/FakeOtpAuthClient.kt` | Dev `AuthClient`: any E.164 number + OTP `123456` → `fake:<uid>:<phone>` bearer token (accepted by the backend's `SO_AUTH_PROVIDER=fake` verifier); restores the session from the token store on start |
+| `mobile/shared/data/.../auth/FakeGoogleAuthClient.kt` | Dev `AuthClient`: sign-in mints a stable dev identity → `fake:<uid>:<email>:<name>` bearer token (accepted by the backend's `SO_AUTH_PROVIDER=fake` verifier), standing in for the production Firebase ID token; restores the session from the token store on start |
 | `mobile/shared/presentation/.../auth/AuthViewModel.kt` | Exposes `AuthClient.authState` for the app-level login gate |
-| `mobile/shared/presentation/.../login/*` | `LoginViewModel` (phone → OTP two-step, `isSubmitting` re-entry guard, error mapping), `LoginUiState` + `LoginStep`/`LoginError` |
+| `mobile/shared/presentation/.../login/*` | `LoginViewModel` (single sign-in action, `isSubmitting` re-entry guard, error mapping), `LoginUiState` + `LoginError` |
 | `mobile/shared/presentation/.../symptom/*` | `SymptomViewModel` (consent step via `awaitingConsent`; the dialog outcome sets `consentConfirmed` on the stopped recording; creates case on stop → `lastCaseId`), `SymptomUiState` + `SymptomStatus` (incl. `CONSENT_DECLINED`) |
 | `mobile/shared/presentation/.../assessment/*` | `AssessmentViewModel` (streams progress, loads prior decision, submits feedback), `AssessmentUiState` |
 | `mobile/shared/presentation/.../history/HistoryViewModel.kt` | `stateIn`-shared case list + `playingCaseId` playback toggle + delete flow (`confirmingDeleteCaseId` drives the confirmation dialog; confirm stops playback if needed → `DeleteCaseUseCase`) (`HistoryUiState`) |
 
 Known gaps (intentional): no persistence (SQLDelight — cases and cached assessments vanish on
-process death), auth uses the fake OTP adapter until a Firebase project is provisioned
-(no sign-out UI yet; a backend 401 drops the session), single hardcoded locale (`hi-IN`)
-in the upload.
+process death), builds run with the fake Google adapter until the Firebase project
+(google-services.json) is provisioned — the google-services plugin and `FirebaseAuthClient`
+are only activated when that file exists (no sign-out UI yet; a backend 401 drops the
+session), single hardcoded locale (`hi-IN`) in the upload.
 
 ## 8. Conventions for Developers & Coding Agents
 
@@ -387,29 +394,29 @@ used instead of the classic `10.0.2.2` host alias because the current emulator's
 does not route app traffic through it reliably (shell traffic works, app sockets time out).
 
 **Testing strategy (implemented):** each shared module owns its tests in `commonTest`
-(104 tests total, run on the JVM via the AGP-KMP `withHostTest {}` DSL):
-- `:shared:domain` `commonTest` — all 16 use cases against hand-written fakes of the five
-  ports (`testutil/Fakes.kt`); verifies `Result` wrapping and delegation (26 tests)
+(96 tests total, run on the JVM via the AGP-KMP `withHostTest {}` DSL):
+- `:shared:domain` `commonTest` — all 15 use cases against hand-written fakes of the five
+  ports (`testutil/Fakes.kt`); verifies `Result` wrapping and delegation (24 tests)
 - `:shared:data` `commonTest` — `InMemoryCaseRepository` (Turbine on `observeCases`,
   delete), `MockAssessmentRepository` (full stage sequence, status transitions, cached
   replay, scenario rotation, feedback round-trip, delete), `BackendAssessmentRepository`
   against a scripted Ktor `MockEngine` (upload/poll/mapping happy path, consent field in
   the upload body, pipeline failure stage, unknown case, poll timeout, network error,
   404 → null, feedback body, delete: backend + local erasure / 404 tolerated / network
-  failure keeps the case), `FakeOtpAuthClient` (session restore, E.164 validation, OTP
-  flow, sign-out), and the `BackendAuth` plugin (bearer header on/off,
-  401 → `onUnauthorized`) (37 tests)
+  failure keeps the case), `FakeGoogleAuthClient` (session restore, sign-in flow,
+  sign-out), and the `BackendAuth` plugin (bearer header on/off,
+  401 → `onUnauthorized`) (34 tests)
 - `:shared:presentation` `commonTest` — the four ViewModels with fakes,
   `Dispatchers.setMain(UnconfinedTestDispatcher())`, and Turbine for `StateFlow`
   transitions; a `MutableSharedFlow`-driven fake steps the assessment pipeline; includes
   a gated-suspend fake proving double-stop re-entry is ignored, the consent step (incl.
   the `consentConfirmed` flag on the stopped recording and its reset per flow),
   history playback toggling/completion/error handling, the delete confirmation flow
-  (request/dismiss/confirm, playback stopped on delete), and the login phone → OTP
-  steps with error mapping (41 tests)
+  (request/dismiss/confirm, playback stopped on delete), and the Google sign-in
+  flow with error mapping (38 tests)
 - `:app` `androidTest` — Compose UI tests (`ui-test-junit4`) for all four screens
-  (28 tests, device/emulator required): login (send code → OTP step, verify → signed in,
-  wrong-code error, change number), record (consent dialog confirm/decline,
+  (27 tests, device/emulator required): login (button shown, tap → signed in,
+  failure error), record (consent dialog confirm/decline,
   Speak/Stop toggle, saved-case → "Get assessment" navigation, permission-denied
   messaging, history navigation), assessment (pipeline progress, failure reason,
   referral banner, prescription-drug badge, accept/reject/override decision bar,

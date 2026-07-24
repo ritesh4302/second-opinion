@@ -2,16 +2,9 @@
     <string name="app_name">Second Opinion</string>
 
     <string name="login_title">Sign in</string>
-    <string name="login_subtitle">Enter your phone number to receive a one-time code</string>
-    <string name="login_phone_label">Phone number (e.g. +919876543210)</string>
-    <string name="login_send_otp">Send code</string>
-    <string name="login_otp_sent_to">Code sent to %1$s</string>
-    <string name="login_otp_label">One-time code</string>
-    <string name="login_verify">Verify and sign in</string>
-    <string name="login_change_number">Change number</string>
-    <string name="login_error_invalid_phone">Enter a valid phone number with country code (e.g. +919876543210)</string>
-    <string name="login_error_invalid_otp">Incorrect code. Please try again.</string>
-    <string name="login_error_network">Could not reach the server. Please try again.</string>
+    <string name="login_subtitle">Sign in with your Google account to continue</string>
+    <string name="login_google">Sign in with Google</string>
+    <string name="login_error_sign_in_failed">Could not sign in. Please try again.</string>
 
     <string name="speak">Speak</string>
     <string name="stop">Stop</string>

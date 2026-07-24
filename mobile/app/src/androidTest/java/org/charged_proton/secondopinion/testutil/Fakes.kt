@@ -118,22 +118,16 @@ class FakeCaseRepository : CaseRepository {
 
 class FakeAuthClient : AuthClient {
     val state = MutableStateFlow<AuthState>(AuthState.SignedOut)
-    var requestOtpError: Throwable? = null
-    var verifyOtpError: Throwable? = null
+    var signInError: Throwable? = null
     var token: String? = null
-    val requestedPhoneNumbers = mutableListOf<String>()
+    var signInCalls = 0
 
     override val authState = state
 
-    override suspend fun requestOtp(phoneNumber: String): Result<Unit> {
-        requestedPhoneNumbers += phoneNumber
-        requestOtpError?.let { return Result.failure(it) }
-        return Result.success(Unit)
-    }
-
-    override suspend fun verifyOtp(code: String): Result<AuthUser> {
-        verifyOtpError?.let { return Result.failure(it) }
-        val user = AuthUser("uid-1", "+911234567890")
+    override suspend fun signIn(): Result<AuthUser> {
+        signInCalls++
+        signInError?.let { return Result.failure(it) }
+        val user = AuthUser("uid-1", "pharmacist@example.com", "Test Pharmacist")
         state.value = AuthState.SignedIn(user)
         return Result.success(user)
     }

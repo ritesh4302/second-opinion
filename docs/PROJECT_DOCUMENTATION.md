@@ -4,7 +4,7 @@
 > project. It captures the problem, the agreed solution, key decisions, architecture, current
 > codebase state, and the roadmap. Keep it updated as decisions change.
 
-**Last updated:** 2026-07-23
+**Last updated:** 2026-07-24
 **Status:** POC in progress
 
 ---
@@ -147,14 +147,14 @@ Android app wired to the backend pipeline end-to-end.
 |---|---|
 | Project | Kotlin Multiplatform (KMM), layer-per-module: `:app` (Compose UI) + `:shared:domain` / `:shared:data` / `:shared:presentation`; Material3, dynamic color; minSdk 29, targetSdk 37 |
 | Package | `org.charged_proton.secondopinion` |
-| UI flow | Login gate (phone number → OTP) → record (patient-consent dialog → Speak/Stop + runtime permission) → assessment (pipeline progress, referral banner on red flags, prescription-labeled guidance, pharmacist accept/reject/override) → history (case list + recording playback + delete with confirmation); Navigation Compose |
+| UI flow | Login gate (Google Sign-In button) → record (patient-consent dialog → Speak/Stop + runtime permission) → assessment (pipeline progress, referral banner on red flags, prescription-labeled guidance, pharmacist accept/reject/override) → history (case list + recording playback + delete with confirmation); Navigation Compose |
 | Audio capture | `AudioRecord` 16 kHz mono PCM → Silero VAD silence trim (sherpa-onnx) → AAC/.m4a in app cache (see §6.3 and `docs/ANDROID_APP.md` §5.1) |
 | Data layer | `BackendAssessmentRepository` (Ktor): multipart upload (with consent flag) → status polling → assessment fetch → feedback POST; case deletion = backend DELETE + local audio-file cleanup; in-memory case store (SQLDelight pending); mock repository kept for tests/demo |
 | `AndroidManifest.xml` | `RECORD_AUDIO` + `INTERNET`; debug manifest allows cleartext HTTP to the dev stack |
-| Auth / login | Backend: Firebase phone-auth ID-token verification (`TokenVerifier` port, `fake` provider for dev), `users` table, owner-scoped recordings, `GET /v1/auth/me`. App: phone-OTP login gate (`AuthClient` port; fake OTP adapter until the Firebase project lands), token persisted in SharedPreferences, `Authorization: Bearer` on every call, 401 → sign-out |
+| Auth / login | Backend: Firebase ID-token verification for Google Sign-In (`TokenVerifier` port, `firebase` \| `fake` providers; issuer `securetoken.google.com/<project>`, audience = project id), `users` table (Firebase UID + email + display name), owner-scoped recordings, `GET /v1/auth/me`. App: Google Sign-In login gate (`AuthClient` port; production adapter `FirebaseAuthClient` — Credential Manager → Firebase Auth SDK → backend — selected at runtime when google-services.json is present, fake Google adapter otherwise), `Authorization: Bearer` on every call, 401 → sign-out |
 | Backend | `backend/` FastAPI + Celery: `POST /v1/recordings` upload → MinIO + Postgres, speech worker (Sarvam Saaras v3 Batch API, native diarization), NLP worker (sarvam-30b relevance filter + structured extraction), assessment worker (sarvam-30b triage: conditions + confidence, red flags, OTC-preferred guidance with `prescription` labels; fake providers for dev), status/assessment/feedback endpoints, Alembic migrations, docker-compose dev stack (see `docs/BACKEND.md`) |
 | App ↔ backend | Wired (debug base URL `http://127.0.0.1:8000` via `adb reverse tcp:8000 tcp:8000`); verified end-to-end on emulator against the docker-compose stack incl. feedback persistence; assessment response now includes `symptom_summary` |
-| Tests | Mobile: 104 host unit tests (`commonTest`) + 28 Compose UI tests (`androidTest`); Backend: 50 pytest tests |
+| Tests | Mobile: 96 host unit tests (`commonTest`) + 27 Compose UI tests (`androidTest`); Backend: 50 pytest tests |
 
 ## 8. Roadmap
 
@@ -186,10 +186,10 @@ Android app wired to the backend pipeline end-to-end.
 
 ### Phase 4 — Hardening & pilot
 - [ ] Authentication and role model (pharmacist / patient / doctor) — backend done
-  (Firebase phone-auth token verification, `users` table + role enum, owner-scoped data,
-  `/v1/auth/me`); app phone-OTP login gate + bearer-token calls done (fake OTP adapter);
-  remaining: Firebase project provisioning (google-services.json) + Firebase phone-auth
-  adapter, sign-out UI
+  (Firebase Google Sign-In ID-token verification, `users` table + role enum,
+  owner-scoped data, `/v1/auth/me`); app Google Sign-In login gate + bearer-token calls
+  + Credential Manager → Firebase Auth SDK adapter (`FirebaseAuthClient`) done;
+  remaining: Firebase project provisioning (google-services.json), sign-out UI
 - [x] DPDP-compliant consent, retention, and deletion flows — upload requires
   `consent_confirmed=true` (set from the in-app consent dialog and stored on the
   recording), `DELETE /v1/recordings/{id}` erasure cascades to audio + transcripts +
