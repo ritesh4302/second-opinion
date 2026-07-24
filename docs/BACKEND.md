@@ -121,12 +121,13 @@ Conventions:
 - JSON everywhere except the multipart upload; errors follow RFC 9457 (Problem Details).
 - Idempotency: `POST /v1/recordings` deduplicates on the client-generated recording UUID
   (per owner — another user re-uploading the same UUID gets `409`).
-- Auth (Phase 4): Firebase Google Sign-In; the API verifies Firebase ID tokens
-  (`Authorization: Bearer`) against the securetoken JWKS (issuer
+- Auth (Phase 4): Firebase sign-in (Google or email/password); the API verifies Firebase
+  ID tokens (`Authorization: Bearer`) against the securetoken JWKS (issuer
   `https://securetoken.google.com/<SO_FIREBASE_PROJECT_ID>`, audience = the project id)
   and scopes recordings/assessments to their owner (cross-user access reads as `404`).
-  `SO_AUTH_PROVIDER=fake` accepts `fake:<uid>[:<email>[:<name>]]` tokens for local dev;
-  health probes stay open.
+  The compose stack defaults to `SO_AUTH_PROVIDER=firebase` with
+  `SO_FIREBASE_PROJECT_ID=pharmacy-opinion`; `SO_AUTH_PROVIDER=fake` accepts
+  `fake:<uid>[:<email>[:<name>]]` tokens for local dev; health probes stay open.
 
 ## 4. Data Model (initial)
 
@@ -234,8 +235,8 @@ even in POC because we handle health data (DPDP Act 2023 — see project doc §9
   `SO_RETENTION_DAYS` (default 30; `audio_purged_at` marks done, keeps it idempotent) —
   derived rows are kept for the pilot's quality loop until an erasure request.
 - **Secrets** via environment/secret manager only; never in code, images, or logs.
-- Auth (Phase 4, implemented): Firebase ID tokens (Google Sign-In provider) verified
-  server-side (`app/auth.py` `TokenVerifier` port: `firebase` | `fake`); `users` table
+- Auth (Phase 4, implemented): Firebase ID tokens (Google + email/password providers)
+  verified server-side (`app/auth.py` `TokenVerifier` port: `firebase` | `fake`); `users` table
   with role enum (pharmacist/admin; patient/doctor roles later per decision D5);
   recordings carry `owner_id` and all data endpoints require the owner's token.
 

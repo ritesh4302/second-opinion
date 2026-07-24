@@ -19,13 +19,22 @@ sealed interface AuthState {
 /** The user dismissed the Google account picker without choosing an account. */
 class SignInCancelledException : Exception("Sign-in cancelled")
 
+/** Why an email/password sign-in or sign-up attempt was rejected. */
+enum class EmailAuthError {
+    INVALID_CREDENTIALS,
+    EMAIL_ALREADY_IN_USE,
+    WEAK_PASSWORD,
+}
+
+class EmailAuthException(val error: EmailAuthError) : Exception("Email auth failed: $error")
+
 /**
- * Port for Firebase Google Sign-In authentication. Adapters:
- * `FakeGoogleAuthClient` (dev/test, pairs with the backend's fake token
- * verifier) and the production client — Credential Manager (Google account
- * picker) → Firebase Auth SDK — whose **Firebase ID token** backs
- * [currentToken]. The app sends [currentToken] as the `Authorization: Bearer`
- * header on every backend call.
+ * Port for Firebase authentication (Google Sign-In plus email/password).
+ * Adapters: `FakeGoogleAuthClient` (dev/test, pairs with the backend's fake
+ * token verifier) and the production client — Credential Manager (Google
+ * account picker) / Firebase email-password auth → Firebase Auth SDK — whose
+ * **Firebase ID token** backs [currentToken]. The app sends [currentToken] as
+ * the `Authorization: Bearer` header on every backend call.
  */
 interface AuthClient {
 
@@ -33,6 +42,12 @@ interface AuthClient {
 
     /** Runs the interactive Google Sign-In flow (via Firebase Auth) and signs the pharmacist in. */
     suspend fun signIn(): Result<AuthUser>
+
+    /** Signs in to an existing email/password account; fails with [EmailAuthException] on rejection. */
+    suspend fun signInWithEmail(email: String, password: String): Result<AuthUser>
+
+    /** Creates an email/password account and signs the pharmacist in. */
+    suspend fun signUpWithEmail(email: String, password: String): Result<AuthUser>
 
     /** Backend bearer token (a Firebase ID token in production), or null when signed out. */
     suspend fun currentToken(): String?

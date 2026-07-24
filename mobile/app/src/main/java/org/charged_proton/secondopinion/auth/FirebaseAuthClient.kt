@@ -7,9 +7,15 @@ import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
+import com.google.android.gms.tasks.Task
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import com.google.firebase.auth.AuthResult
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
+import com.google.firebase.auth.FirebaseAuthInvalidUserException
+import com.google.firebase.auth.FirebaseAuthUserCollisionException
+import com.google.firebase.auth.FirebaseAuthWeakPasswordException
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
 import kotlinx.coroutines.CancellationException
@@ -20,11 +26,13 @@ import kotlinx.coroutines.tasks.await
 import org.charged_proton.secondopinion.domain.auth.AuthClient
 import org.charged_proton.secondopinion.domain.auth.AuthState
 import org.charged_proton.secondopinion.domain.auth.AuthUser
+import org.charged_proton.secondopinion.domain.auth.EmailAuthError
+import org.charged_proton.secondopinion.domain.auth.EmailAuthException
 import org.charged_proton.secondopinion.domain.auth.SignInCancelledException
 
 /**
- * Production [AuthClient]: Credential Manager (Google account picker) →
- * Firebase Auth SDK (`signInWithCredential`) → Firebase ID token as the
+ * Production [AuthClient]: Credential Manager (Google account picker) or
+ * Firebase email/password auth → Firebase Auth SDK → Firebase ID token as the
  * backend bearer (verified server-side against `securetoken.google.com/<project>`,
  * BACKEND.md §4). Firebase Auth persists the session itself, so no
  * `AuthTokenStore` is involved; [currentToken] returns the cached ID token,
@@ -85,6 +93,31 @@ class FirebaseAuthClient(
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    override suspend fun signInWithEmail(email: String, password: String): Result<AuthUser> =
+        emailAuth { firebaseAuth.signInWithEmailAndPassword(email, password) }
+
+    override suspend fun signUpWithEmail(email: String, password: String): Result<AuthUser> =
+        emailAuth { firebaseAuth.createUserWithEmailAndPassword(email, password) }
+
+    /** Runs a Firebase email/password call, mapping SDK failures to [EmailAuthException]. */
+    private suspend fun emailAuth(authCall: () -> Task<AuthResult>): Result<AuthUser> = try {
+        val firebaseUser = authCall().await().user
+            ?: return Result.failure(IllegalStateException("Firebase sign-in returned no user"))
+        Result.success(firebaseUser.toAuthUser())
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: FirebaseAuthWeakPasswordException) {
+        Result.failure(EmailAuthException(EmailAuthError.WEAK_PASSWORD))
+    } catch (e: FirebaseAuthInvalidCredentialsException) {
+        Result.failure(EmailAuthException(EmailAuthError.INVALID_CREDENTIALS))
+    } catch (e: FirebaseAuthInvalidUserException) {
+        Result.failure(EmailAuthException(EmailAuthError.INVALID_CREDENTIALS))
+    } catch (e: FirebaseAuthUserCollisionException) {
+        Result.failure(EmailAuthException(EmailAuthError.EMAIL_ALREADY_IN_USE))
+    } catch (e: Exception) {
+        Result.failure(e)
     }
 
     override suspend fun currentToken(): String? {

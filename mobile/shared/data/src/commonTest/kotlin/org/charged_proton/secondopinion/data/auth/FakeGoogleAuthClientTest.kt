@@ -64,6 +64,32 @@ class FakeGoogleAuthClientTest {
     }
 
     @Test
+    fun signInWithEmail_persistsTokenAndSignsIn() = runTest {
+        val client = FakeGoogleAuthClient(tokenStore)
+
+        val result = client.signInWithEmail("jane@pharmacy.org", "secret")
+
+        val expectedUser = AuthUser(
+            uid = FakeGoogleAuthClient.FAKE_EMAIL_UID,
+            email = "jane@pharmacy.org",
+            displayName = "jane",
+        )
+        assertEquals(expectedUser, result.getOrNull())
+        assertEquals(AuthState.SignedIn(expectedUser), client.authState.value)
+        assertEquals("fake:${expectedUser.uid}:jane@pharmacy.org:jane", tokenStore.token)
+    }
+
+    @Test
+    fun signUpWithEmail_behavesLikeEmailSignIn() = runTest {
+        val client = FakeGoogleAuthClient(tokenStore)
+
+        val result = client.signUpWithEmail("jane@pharmacy.org", "secret")
+
+        assertEquals(FakeGoogleAuthClient.FAKE_EMAIL_UID, result.getOrNull()?.uid)
+        assertEquals(AuthState.SignedIn(result.getOrNull()!!), client.authState.value)
+    }
+
+    @Test
     fun signOut_clearsTokenAndState() = runTest {
         val client = FakeGoogleAuthClient(tokenStore)
         client.signIn()

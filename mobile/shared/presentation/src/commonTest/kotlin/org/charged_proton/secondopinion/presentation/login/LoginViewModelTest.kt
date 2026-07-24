@@ -11,8 +11,12 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import org.charged_proton.secondopinion.domain.auth.AuthState
+import org.charged_proton.secondopinion.domain.auth.EmailAuthError
+import org.charged_proton.secondopinion.domain.auth.EmailAuthException
 import org.charged_proton.secondopinion.domain.auth.SignInCancelledException
 import org.charged_proton.secondopinion.domain.usecase.SignInUseCase
+import org.charged_proton.secondopinion.domain.usecase.SignInWithEmailUseCase
+import org.charged_proton.secondopinion.domain.usecase.SignUpWithEmailUseCase
 import org.charged_proton.secondopinion.presentation.testutil.FakeAuthClient
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -30,7 +34,11 @@ class LoginViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun viewModel() = LoginViewModel(SignInUseCase(authClient))
+    private fun viewModel() = LoginViewModel(
+        SignInUseCase(authClient),
+        SignInWithEmailUseCase(authClient),
+        SignUpWithEmailUseCase(authClient),
+    )
 
     @Test
     fun initialState_isIdle() {
@@ -83,5 +91,82 @@ class LoginViewModelTest {
 
         assertNull(vm.uiState.value.error)
         assertEquals(true, authClient.authState.value is AuthState.SignedIn)
+    }
+
+    @Test
+    fun submitEmail_signsInWithEmail() {
+        val vm = viewModel()
+        vm.onEmailChange("jane@pharmacy.org")
+        vm.onPasswordChange("secret")
+
+        vm.onSubmitEmail()
+
+        assertEquals(1, authClient.emailSignInCalls)
+        assertEquals(0, authClient.emailSignUpCalls)
+        assertNull(vm.uiState.value.error)
+        assertEquals(true, authClient.authState.value is AuthState.SignedIn)
+    }
+
+    @Test
+    fun submitEmail_inSignUpMode_signsUp() {
+        val vm = viewModel()
+        vm.onToggleSignUp()
+        vm.onEmailChange("jane@pharmacy.org")
+        vm.onPasswordChange("secret")
+
+        vm.onSubmitEmail()
+
+        assertEquals(1, authClient.emailSignUpCalls)
+        assertEquals(0, authClient.emailSignInCalls)
+        assertEquals(true, authClient.authState.value is AuthState.SignedIn)
+    }
+
+    @Test
+    fun submitEmail_withBlankFields_doesNothing() {
+        val vm = viewModel()
+
+        vm.onSubmitEmail()
+
+        assertEquals(0, authClient.emailSignInCalls)
+        assertEquals(LoginUiState(), vm.uiState.value)
+    }
+
+    @Test
+    fun submitEmail_invalidCredentials_showsError() {
+        authClient.signInError = EmailAuthException(EmailAuthError.INVALID_CREDENTIALS)
+        val vm = viewModel()
+        vm.onEmailChange("jane@pharmacy.org")
+        vm.onPasswordChange("wrong")
+
+        vm.onSubmitEmail()
+
+        assertEquals(LoginError.INVALID_CREDENTIALS, vm.uiState.value.error)
+        assertEquals(false, vm.uiState.value.isSubmitting)
+    }
+
+    @Test
+    fun submitEmail_emailInUse_showsError() {
+        authClient.signInError = EmailAuthException(EmailAuthError.EMAIL_ALREADY_IN_USE)
+        val vm = viewModel()
+        vm.onToggleSignUp()
+        vm.onEmailChange("jane@pharmacy.org")
+        vm.onPasswordChange("secret")
+
+        vm.onSubmitEmail()
+
+        assertEquals(LoginError.EMAIL_ALREADY_IN_USE, vm.uiState.value.error)
+    }
+
+    @Test
+    fun editingFields_clearsError() {
+        authClient.signInError = EmailAuthException(EmailAuthError.INVALID_CREDENTIALS)
+        val vm = viewModel()
+        vm.onEmailChange("jane@pharmacy.org")
+        vm.onPasswordChange("wrong")
+        vm.onSubmitEmail()
+
+        vm.onPasswordChange("corrected")
+
+        assertNull(vm.uiState.value.error)
     }
 }

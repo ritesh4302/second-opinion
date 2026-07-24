@@ -33,6 +33,8 @@ import org.charged_proton.secondopinion.domain.usecase.PlayRecordingUseCase
 import org.charged_proton.secondopinion.domain.usecase.ReleaseRecorderUseCase
 import org.charged_proton.secondopinion.domain.usecase.RequestAssessmentUseCase
 import org.charged_proton.secondopinion.domain.usecase.SignInUseCase
+import org.charged_proton.secondopinion.domain.usecase.SignInWithEmailUseCase
+import org.charged_proton.secondopinion.domain.usecase.SignUpWithEmailUseCase
 import org.charged_proton.secondopinion.domain.usecase.StartRecordingUseCase
 import org.charged_proton.secondopinion.domain.usecase.StopPlaybackUseCase
 import org.charged_proton.secondopinion.domain.usecase.StopRecordingUseCase
@@ -80,6 +82,8 @@ val appModule = module {
     // Use cases
     factory { ObserveAuthStateUseCase(get()) }
     factory { SignInUseCase(get()) }
+    factory { SignInWithEmailUseCase(get()) }
+    factory { SignUpWithEmailUseCase(get()) }
     factory { StartRecordingUseCase(get()) }
     factory { StopRecordingUseCase(get()) }
     factory { ReleaseRecorderUseCase(get()) }
@@ -96,7 +100,7 @@ val appModule = module {
 
     // ViewModels
     viewModel { AuthViewModel(get()) }
-    viewModel { LoginViewModel(get()) }
+    viewModel { LoginViewModel(get(), get(), get()) }
     viewModel { SymptomViewModel(get(), get(), get(), get()) }
     viewModel { (caseId: String) -> AssessmentViewModel(caseId, get(), get(), get()) }
     viewModel { HistoryViewModel(get(), get(), get(), get()) }

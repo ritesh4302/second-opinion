@@ -129,6 +129,10 @@ class FakeAuthClient : AuthClient {
     var token: String? = null
     var signInCalls = 0
     var signOutCalls = 0
+    var emailSignInCalls = 0
+    var emailSignUpCalls = 0
+    var lastEmail: String? = null
+    var lastPassword: String? = null
 
     override val authState = state
 
@@ -136,6 +140,25 @@ class FakeAuthClient : AuthClient {
         signInCalls++
         signInError?.let { return Result.failure(it) }
         val user = AuthUser("uid-1", "pharmacist@example.com", "Test Pharmacist")
+        state.value = AuthState.SignedIn(user)
+        return Result.success(user)
+    }
+
+    override suspend fun signInWithEmail(email: String, password: String): Result<AuthUser> {
+        emailSignInCalls++
+        return emailAuth(email, password)
+    }
+
+    override suspend fun signUpWithEmail(email: String, password: String): Result<AuthUser> {
+        emailSignUpCalls++
+        return emailAuth(email, password)
+    }
+
+    private fun emailAuth(email: String, password: String): Result<AuthUser> {
+        lastEmail = email
+        lastPassword = password
+        signInError?.let { return Result.failure(it) }
+        val user = AuthUser("uid-email-1", email, null)
         state.value = AuthState.SignedIn(user)
         return Result.success(user)
     }
