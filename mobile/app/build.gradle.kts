@@ -15,7 +15,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "org.charged_proton.secondopinion"
+        applicationId = "org.pharmacy.secondopinion"
         minSdk = 29
         targetSdk = 37
         versionCode = 1
