@@ -1,9 +1,10 @@
-"""Authentication: Firebase phone-auth ID tokens verified server-side.
+"""Authentication: Firebase ID tokens (Google Sign-In provider) verified server-side.
 
-The app signs the pharmacist in with Firebase Auth (phone/OTP) and sends the
-resulting ID token as a Bearer token. The backend verifies the RS256 signature
-against Google's public JWKS and auto-provisions a `users` row on first sight
-(same port/adapter pattern as the speech/nlp/assessment providers).
+The app signs the pharmacist in with Google via Firebase Auth (Credential
+Manager -> Firebase Auth SDK) and sends the resulting Firebase ID token as a
+Bearer token. The backend verifies the RS256 signature against Firebase's
+securetoken JWKS and auto-provisions a `users` row on first sight (same
+port/adapter pattern as the speech/nlp/assessment providers).
 """
 
 from dataclasses import dataclass
@@ -21,6 +22,8 @@ from app.models import User, UserRole
 from app.problems import Problem
 from app.settings import get_settings
 
+# Firebase's securetoken signing keys. Same keys as the x509 endpoint
+# (robot/v1/metadata/x509/securetoken@...), served in JWKS form for PyJWKClient.
 FIREBASE_JWKS_URL = (
     "https://www.googleapis.com/service_accounts/v1/jwk/"
     "securetoken@system.gserviceaccount.com"
@@ -34,7 +37,8 @@ class InvalidToken(Exception):
 @dataclass(frozen=True)
 class VerifiedIdentity:
     uid: str
-    phone_number: str | None
+    email: str | None
+    display_name: str | None
 
 
 class TokenVerifier(Protocol):
@@ -42,10 +46,11 @@ class TokenVerifier(Protocol):
 
 
 class FirebaseTokenVerifier:
-    """Verifies Firebase ID tokens against Google's JWKS (needs pyjwt[crypto])."""
+    """Verifies Firebase ID tokens against the securetoken JWKS (needs pyjwt[crypto])."""
 
     def __init__(self, project_id: str) -> None:
         self._project_id = project_id
+        self._issuer = f"https://securetoken.google.com/{project_id}"
         self._jwk_client = jwt.PyJWKClient(FIREBASE_JWKS_URL)
 
     def verify(self, token: str) -> VerifiedIdentity:
@@ -56,24 +61,30 @@ class FirebaseTokenVerifier:
                 key.key,
                 algorithms=["RS256"],
                 audience=self._project_id,
-                issuer=f"https://securetoken.google.com/{self._project_id}",
+                issuer=self._issuer,
             )
         except jwt.PyJWTError as exc:
             raise InvalidToken(str(exc)) from exc
         uid = claims.get("sub")
         if not uid:
             raise InvalidToken("token has no subject claim")
-        return VerifiedIdentity(uid=uid, phone_number=claims.get("phone_number"))
+        return VerifiedIdentity(
+            uid=uid, email=claims.get("email"), display_name=claims.get("name")
+        )
 
 
 class FakeTokenVerifier:
-    """Dev/test verifier: accepts "fake:<uid>[:<phone>]" bearer tokens."""
+    """Dev/test verifier: accepts "fake:<uid>[:<email>[:<name>]]" bearer tokens."""
 
     def verify(self, token: str) -> VerifiedIdentity:
-        parts = token.split(":", 2)
+        parts = token.split(":", 3)
         if parts[0] != "fake" or len(parts) < 2 or not parts[1]:
-            raise InvalidToken('fake verifier expects "fake:<uid>[:<phone>]"')
-        return VerifiedIdentity(uid=parts[1], phone_number=parts[2] if len(parts) == 3 else None)
+            raise InvalidToken('fake verifier expects "fake:<uid>[:<email>[:<name>]]"')
+        return VerifiedIdentity(
+            uid=parts[1],
+            email=parts[2] if len(parts) > 2 else None,
+            display_name=parts[3] if len(parts) > 3 else None,
+        )
 
 
 @lru_cache
@@ -99,13 +110,14 @@ async def get_current_user(
     except InvalidToken as exc:
         raise Problem(401, "Unauthorized", f"invalid token: {exc}") from exc
 
-    result = await session.execute(select(User).where(User.firebase_uid == identity.uid))
+    result = await session.execute(select(User).where(User.google_sub == identity.uid))
     user = result.scalar_one_or_none()
     if user is None:
         # Auto-provision on first verified token; everyone starts as pharmacist
         user = User(
-            firebase_uid=identity.uid,
-            phone_number=identity.phone_number,
+            google_sub=identity.uid,
+            email=identity.email,
+            display_name=identity.display_name,
             role=UserRole.PHARMACIST,
         )
         session.add(user)

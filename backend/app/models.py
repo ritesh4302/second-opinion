@@ -43,9 +43,11 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    # Firebase Auth UID (phone sign-in); the stable identity across devices
-    firebase_uid: Mapped[str] = mapped_column(String(128), unique=True, index=True)
-    phone_number: Mapped[str | None] = mapped_column(String(20), default=None)
+    # Firebase UID (`sub` claim of the Firebase ID token; Google provider);
+    # the stable identity across devices
+    google_sub: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    email: Mapped[str | None] = mapped_column(String(320), default=None)
+    display_name: Mapped[str | None] = mapped_column(String(200), default=None)
     role: Mapped[UserRole] = mapped_column(
         Enum(UserRole, native_enum=False, length=20), default=UserRole.PHARMACIST
     )

@@ -4,7 +4,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import Assessment, Extraction, Recording, RecordingStatus, User
-from tests.conftest import TEST_PHONE, TEST_UID
+from tests.conftest import TEST_EMAIL, TEST_UID
 
 
 async def seed_completed_recording(
@@ -16,7 +16,7 @@ async def seed_completed_recording(
     owner_id = uuid.uuid4()
     async with session_factory() as session:
         # Owner matches the default test token so the client can read it back
-        session.add(User(id=owner_id, firebase_uid=TEST_UID, phone_number=TEST_PHONE))
+        session.add(User(id=owner_id, google_sub=TEST_UID, email=TEST_EMAIL))
         session.add(
             Recording(
                 id=recording_id,

@@ -24,8 +24,10 @@ class Settings(BaseSettings):
     # audio blob + transcript rows of recordings older than this window.
     retention_days: int = 30
 
-    # Auth: Firebase phone sign-in; the API verifies Firebase ID tokens.
-    # "fake" accepts "fake:<uid>[:<phone>]" bearer tokens for local dev/tests.
+    # Auth: Firebase Google Sign-In; the API verifies Firebase ID tokens
+    # (issuer https://securetoken.google.com/<project>, audience = project id).
+    # "fake" accepts "fake:<uid>[:<email>[:<name>]]" bearer tokens for local
+    # dev/tests.
     auth_provider: str = "firebase"  # "firebase" | "fake"
     firebase_project_id: str = ""
 

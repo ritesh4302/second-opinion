@@ -10,7 +10,8 @@ class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
-    phone_number: str | None
+    email: str | None
+    display_name: str | None
     role: UserRole
     created_at: datetime
 

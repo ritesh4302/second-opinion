@@ -14,7 +14,7 @@ x-app-env: &app-env
   SO_ASSESSMENT_PROVIDER: ${SO_ASSESSMENT_PROVIDER:-fake}
   SO_SARVAM_API_KEY: ${SO_SARVAM_API_KEY:-}
   # Auth defaults to the fake verifier for local dev; set SO_AUTH_PROVIDER=firebase
-  # and the Firebase project id to verify real phone-auth ID tokens.
+  # and the Firebase project id to verify real Firebase ID tokens (Google provider).
   SO_AUTH_PROVIDER: ${SO_AUTH_PROVIDER:-fake}
   SO_FIREBASE_PROJECT_ID: ${SO_FIREBASE_PROJECT_ID:-}
   # DPDP retention window: the worker's daily sweep purges audio + transcripts

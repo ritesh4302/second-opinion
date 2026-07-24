@@ -12,12 +12,12 @@ from app.queue import get_enqueue
 from app.storage import get_storage
 
 TEST_UID = "pharm-1"
-TEST_PHONE = "+919876543210"
+TEST_EMAIL = "pharmacist@example.com"
 
 
-def auth_header(uid: str = TEST_UID, phone: str = TEST_PHONE) -> dict[str, str]:
-    """Bearer header accepted by FakeTokenVerifier ("fake:<uid>:<phone>")."""
-    return {"Authorization": f"Bearer fake:{uid}:{phone}"}
+def auth_header(uid: str = TEST_UID, email: str = TEST_EMAIL) -> dict[str, str]:
+    """Bearer header accepted by FakeTokenVerifier ("fake:<uid>:<email>")."""
+    return {"Authorization": f"Bearer fake:{uid}:{email}"}
 
 
 class FakeStorage:

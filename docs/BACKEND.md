@@ -4,7 +4,7 @@
 > libraries, and the scaling best practices we follow. For product context see
 > `docs/PROJECT_DOCUMENTATION.md`; for the Android client see `docs/ANDROID_APP.md`.
 
-**Last updated:** 2026-07-21
+**Last updated:** 2026-07-24
 **Status:** Steps 1–6 implemented — the pipeline runs end-to-end: upload → speech worker
 (Sarvam Batch API, native diarization) → NLP worker (sarvam-30b relevance + extraction) →
 assessment worker (sarvam-30b triage output as the interim answer to Q3); the Android app
@@ -121,10 +121,12 @@ Conventions:
 - JSON everywhere except the multipart upload; errors follow RFC 9457 (Problem Details).
 - Idempotency: `POST /v1/recordings` deduplicates on the client-generated recording UUID
   (per owner — another user re-uploading the same UUID gets `409`).
-- Auth (Phase 4): Firebase phone sign-in; the API verifies Firebase ID tokens
-  (`Authorization: Bearer`) against Google's JWKS and scopes recordings/assessments to
-  their owner (cross-user access reads as `404`). `SO_AUTH_PROVIDER=fake` accepts
-  `fake:<uid>[:<phone>]` tokens for local dev; health probes stay open.
+- Auth (Phase 4): Firebase Google Sign-In; the API verifies Firebase ID tokens
+  (`Authorization: Bearer`) against the securetoken JWKS (issuer
+  `https://securetoken.google.com/<SO_FIREBASE_PROJECT_ID>`, audience = the project id)
+  and scopes recordings/assessments to their owner (cross-user access reads as `404`).
+  `SO_AUTH_PROVIDER=fake` accepts `fake:<uid>[:<email>[:<name>]]` tokens for local dev;
+  health probes stay open.
 
 ## 4. Data Model (initial)
 
@@ -232,10 +234,10 @@ even in POC because we handle health data (DPDP Act 2023 — see project doc §9
   `SO_RETENTION_DAYS` (default 30; `audio_purged_at` marks done, keeps it idempotent) —
   derived rows are kept for the pilot's quality loop until an erasure request.
 - **Secrets** via environment/secret manager only; never in code, images, or logs.
-- Auth (Phase 4, implemented): Firebase phone-auth ID tokens verified server-side
-  (`app/auth.py` `TokenVerifier` port: `firebase` | `fake`); `users` table with role enum
-  (pharmacist/admin; patient/doctor roles later per decision D5); recordings carry
-  `owner_id` and all data endpoints require the owner's token.
+- Auth (Phase 4, implemented): Firebase ID tokens (Google Sign-In provider) verified
+  server-side (`app/auth.py` `TokenVerifier` port: `firebase` | `fake`); `users` table
+  with role enum (pharmacist/admin; patient/doctor roles later per decision D5);
+  recordings carry `owner_id` and all data endpoints require the owner's token.
 
 ## 9. Environments & Deployment
 
@@ -280,10 +282,10 @@ Layout: `backend/` — uv project, Python 3.12, single package `app/` + `worker/
 | `backend/pyproject.toml` | Dependencies (FastAPI, SQLAlchemy 2 async, Alembic, Celery, boto3), ruff + pytest config |
 | `backend/app/main.py` | `create_app()` factory; RFC 9457 problem-details handler; router registration; `http_request` access-log middleware |
 | `backend/app/settings.py` | `pydantic-settings`, `SO_`-prefixed env vars, working defaults for the compose stack |
-| `backend/app/auth.py` | `TokenVerifier` port: `FirebaseTokenVerifier` (PyJWT + Google JWKS, needs `pyjwt[crypto]`) / `FakeTokenVerifier` (`fake:<uid>[:<phone>]` for dev/tests); `get_current_user` dependency auto-provisions `users` rows |
+| `backend/app/auth.py` | `TokenVerifier` port: `FirebaseTokenVerifier` (PyJWT + Firebase securetoken JWKS, needs `pyjwt[crypto]`; issuer + audience pinned to `SO_FIREBASE_PROJECT_ID`) / `FakeTokenVerifier` (`fake:<uid>[:<email>[:<name>]]` for dev/tests); `get_current_user` dependency auto-provisions `users` rows |
 | `backend/app/observability.py` | structlog config shared by API + worker: JSON (or console) rendering for structlog and stdlib records alike |
 | `backend/app/db.py` | `Base`, lazy async engine/session factory, `get_session` dependency |
-| `backend/app/models.py` | `User` (Firebase UID + phone + role), `Recording` (client-UUID PK, `owner_id` FK, `consent_confirmed`, `audio_purged_at`), `TranscriptSegment`, `Extraction`, `Assessment`, `Feedback` (delete cascades from `Recording`); `RecordingStatus` state machine (§2.2); jsonb with SQLite-compatible variant |
+| `backend/app/models.py` | `User` (Firebase UID + email + display name + role), `Recording` (client-UUID PK, `owner_id` FK, `consent_confirmed`, `audio_purged_at`), `TranscriptSegment`, `Extraction`, `Assessment`, `Feedback` (delete cascades from `Recording`); `RecordingStatus` state machine (§2.2); jsonb with SQLite-compatible variant |
 | `backend/app/schemas.py` | Pydantic response/request models; `UserOut`; `AssessmentOut.symptom_summary` is derived from the `Extraction` row at read time (not stored on `assessments`) |
 | `backend/app/storage.py` | `ObjectStorage` port + boto3 S3/MinIO impl (offloaded via `asyncio.to_thread`) |
 | `backend/app/queue.py` | Celery factory + `enqueue` dependency; API enqueues by task name, never imports worker code |
