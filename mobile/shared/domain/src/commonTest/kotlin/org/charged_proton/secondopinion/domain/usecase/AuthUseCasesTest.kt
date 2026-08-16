@@ -63,6 +63,16 @@ class AuthUseCasesTest {
     }
 
     @Test
+    fun signOut_signsOut() = runTest {
+        authClient.signIn()
+
+        SignOutUseCase(authClient)()
+
+        assertEquals(1, authClient.signOutCalls)
+        assertEquals(AuthState.SignedOut, authClient.authState.value)
+    }
+
+    @Test
     fun signInWithEmail_propagatesFailure() = runTest {
         authClient.signInError = EmailAuthException(EmailAuthError.INVALID_CREDENTIALS)
 

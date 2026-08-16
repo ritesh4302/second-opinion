@@ -8,12 +8,18 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.platform.app.InstrumentationRegistry
 import org.charged_proton.secondopinion.R
+import org.charged_proton.secondopinion.domain.auth.AuthState
+import org.charged_proton.secondopinion.domain.auth.AuthUser
 import org.charged_proton.secondopinion.domain.usecase.CreateCaseUseCase
+import org.charged_proton.secondopinion.domain.usecase.ObserveAuthStateUseCase
 import org.charged_proton.secondopinion.domain.usecase.ReleaseRecorderUseCase
+import org.charged_proton.secondopinion.domain.usecase.SignOutUseCase
 import org.charged_proton.secondopinion.domain.usecase.StartRecordingUseCase
 import org.charged_proton.secondopinion.domain.usecase.StopRecordingUseCase
+import org.charged_proton.secondopinion.presentation.auth.AuthViewModel
 import org.charged_proton.secondopinion.presentation.symptom.SymptomViewModel
 import org.charged_proton.secondopinion.testutil.FakeAudioRecorder
+import org.charged_proton.secondopinion.testutil.FakeAuthClient
 import org.charged_proton.secondopinion.testutil.FakeCaseRepository
 import org.charged_proton.secondopinion.ui.theme.SecondOpinionTheme
 import org.junit.Assert.assertEquals
@@ -41,6 +47,13 @@ class RecordScreenTest {
         ReleaseRecorderUseCase(recorder),
         CreateCaseUseCase(caseRepository),
     )
+    private val authClient = FakeAuthClient().apply {
+        state.value = AuthState.SignedIn(AuthUser("uid-1", "pharmacist@example.com", null))
+    }
+    private val authViewModel = AuthViewModel(
+        ObserveAuthStateUseCase(authClient),
+        SignOutUseCase(authClient),
+    )
 
     private var openedCaseId: String? = null
     private var historyOpened = false
@@ -60,6 +73,7 @@ class RecordScreenTest {
                     onOpenAssessment = { openedCaseId = it },
                     onOpenHistory = { historyOpened = true },
                     viewModel = viewModel,
+                    authViewModel = authViewModel,
                 )
             }
         }
@@ -141,5 +155,19 @@ class RecordScreenTest {
         composeRule.onNodeWithText(string(R.string.view_history)).performClick()
 
         assertTrue(historyOpened)
+    }
+
+    @Test
+    fun topBar_showsSignedInIdentity() {
+        composeRule.onNodeWithText("pharmacist@example.com").assertIsDisplayed()
+    }
+
+    @Test
+    fun tapSignOut_signsSessionOut() {
+        composeRule.onNodeWithText(string(R.string.sign_out)).performClick()
+
+        composeRule.waitForIdle()
+        assertEquals(1, authClient.signOutCalls)
+        assertEquals(AuthState.SignedOut, authClient.state.value)
     }
 }

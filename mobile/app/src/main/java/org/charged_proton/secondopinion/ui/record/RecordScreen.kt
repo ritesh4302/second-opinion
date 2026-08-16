@@ -6,6 +6,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -23,10 +24,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.charged_proton.secondopinion.R
+import org.charged_proton.secondopinion.domain.auth.AuthState
+import org.charged_proton.secondopinion.presentation.auth.AuthViewModel
 import org.charged_proton.secondopinion.presentation.symptom.SymptomStatus
 import org.charged_proton.secondopinion.presentation.symptom.SymptomViewModel
 import org.koin.androidx.compose.koinViewModel
@@ -38,9 +42,11 @@ fun RecordScreen(
     onOpenHistory: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: SymptomViewModel = koinViewModel(),
+    authViewModel: AuthViewModel = koinViewModel(),
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val authState by authViewModel.authState.collectAsStateWithLifecycle()
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -61,6 +67,29 @@ fun RecordScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Top
     ) {
+        // Signed-in identity + sign-out; signing out flips the auth gate
+        // back to the login screen.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = (authState as? AuthState.SignedIn)
+                    ?.user?.let { it.displayName ?: it.email }
+                    .orEmpty(),
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            TextButton(onClick = authViewModel::onSignOut) {
+                Text(text = stringResource(R.string.sign_out))
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
         Button(
             onClick = {
                 if (uiState.isRecording) {

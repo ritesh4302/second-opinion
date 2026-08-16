@@ -121,6 +121,7 @@ class FakeAuthClient : AuthClient {
     var signInError: Throwable? = null
     var token: String? = null
     var signInCalls = 0
+    var signOutCalls = 0
     var emailSignInCalls = 0
     var emailSignUpCalls = 0
     var lastEmail: String? = null
@@ -158,6 +159,7 @@ class FakeAuthClient : AuthClient {
     override suspend fun currentToken(): String? = token
 
     override suspend fun signOut() {
+        signOutCalls++
         state.value = AuthState.SignedOut
     }
 }

@@ -15,6 +15,7 @@
     <string name="login_error_invalid_credentials">Incorrect email or password.</string>
     <string name="login_error_email_in_use">An account with this email already exists.</string>
     <string name="login_error_weak_password">Password is too weak — use at least 6 characters.</string>
+    <string name="sign_out">Sign out</string>
 
     <string name="speak">Speak</string>
     <string name="stop">Stop</string>
