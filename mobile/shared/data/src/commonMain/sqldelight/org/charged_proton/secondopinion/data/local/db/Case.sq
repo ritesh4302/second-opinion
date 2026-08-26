@@ -1,0 +1,46 @@
+CREATE TABLE symptom_case (
+    id TEXT NOT NULL PRIMARY KEY,
+    owner_id TEXT NOT NULL,
+    recording_path TEXT NOT NULL,
+    recording_created_at INTEGER NOT NULL,
+    duration_ms INTEGER NOT NULL,
+    consent_confirmed INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
+
+CREATE INDEX symptom_case_owner_created_idx
+ON symptom_case(owner_id, created_at DESC);
+
+selectAllByOwner:
+SELECT *
+FROM symptom_case
+WHERE owner_id = ?
+ORDER BY created_at DESC;
+
+selectById:
+SELECT *
+FROM symptom_case
+WHERE id = ? AND owner_id = ?;
+
+insertCase:
+INSERT INTO symptom_case(
+    id,
+    owner_id,
+    recording_path,
+    recording_created_at,
+    duration_ms,
+    consent_confirmed,
+    status,
+    created_at
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+updateStatus:
+UPDATE symptom_case
+SET status = ?
+WHERE id = ? AND owner_id = ?;
+
+deleteById:
+DELETE FROM symptom_case
+WHERE id = ? AND owner_id = ?;

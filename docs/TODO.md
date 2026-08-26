@@ -20,9 +20,15 @@
 
 - [x] **Sign-out UI** — top row on `RecordScreen` showing the signed-in identity with a
   "Sign out" action, wired through `AuthViewModel` → `SignOutUseCase` → `AuthClient.signOut()`.
-- [ ] **Migrate `InMemoryCaseRepository` to SQLDelight** — case history is lost on process
-  death; the planned local DB (`docs/ANDROID_APP.md` module layout: recording queue + results
-  cache) is unimplemented. Also a prerequisite for an offline upload queue.
+- [x] **Migrate `InMemoryCaseRepository` to SQLDelight** — owner-scoped case metadata now
+  survives process death through `SqlDelightCaseRepository`; `AppModule` uses the persistent
+  database and host tests cover restoration, observation, status updates, deletion, and account
+  isolation.
+- [x] **Persist assessment and feedback results in SQLDelight** — owner-scoped assessment JSON
+  and pharmacist decisions now survive process death through `SqlDelightAssessmentStore`; the
+  v1→v2 migration and host tests cover restoration, deletion, and account isolation.
+- [ ] **Implement the offline upload queue** — persist queued/retry state and move pending audio
+  from evictable cache storage before adding network-constrained WorkManager execution.
 - [ ] **"Forgot password" UX** — Firebase `sendPasswordResetEmail` flow from the login screen
   (plus consider email verification on sign-up).
 - [ ] **Legal disclaimers** — explicit in-app terms/liability framing (Q6): pharmacist is the

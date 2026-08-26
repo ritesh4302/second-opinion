@@ -85,6 +85,7 @@ class BackendAssessmentRepositoryTest {
 
     private val backend = FakeBackend()
     private val caseRepository = InMemoryCaseRepository()
+    private val assessmentStore = FakeAssessmentStore()
     private val deletedAudioPaths = mutableListOf<String>()
 
     private fun repository(maxPollMillis: Long = 60_000) = BackendAssessmentRepository(
@@ -92,6 +93,7 @@ class BackendAssessmentRepositoryTest {
         caseRepository = caseRepository,
         audioFileReader = { byteArrayOf(1, 2, 3) },
         audioFileDeleter = { deletedAudioPaths += it },
+        assessmentStore = assessmentStore,
         pollIntervalMillis = 10,
         maxPollMillis = maxPollMillis,
     )
@@ -133,6 +135,8 @@ class BackendAssessmentRepositoryTest {
         }
         assertEquals(1, backend.uploadCount)
         assertEquals(CaseStatus.COMPLETED, caseRepository.getCase(caseId)?.status)
+        backend.assessmentJson = null
+        assertEquals(completed.assessment, repository().getAssessment(caseId))
     }
 
     @Test
@@ -193,6 +197,7 @@ class BackendAssessmentRepositoryTest {
         caseRepository = caseRepository,
         audioFileReader = { byteArrayOf(1) },
         audioFileDeleter = { deletedAudioPaths += it },
+        assessmentStore = assessmentStore,
     )
 
     @Test

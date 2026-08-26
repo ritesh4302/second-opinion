@@ -1,0 +1,46 @@
+CREATE TABLE assessment_cache (
+    case_id TEXT NOT NULL,
+    owner_id TEXT NOT NULL,
+    assessment_id TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    PRIMARY KEY(case_id, owner_id),
+    UNIQUE(assessment_id, owner_id)
+);
+
+CREATE TABLE feedback_cache (
+    assessment_id TEXT NOT NULL,
+    owner_id TEXT NOT NULL,
+    decision TEXT NOT NULL,
+    note TEXT,
+    PRIMARY KEY(assessment_id, owner_id)
+);
+
+selectAssessment:
+SELECT payload_json
+FROM assessment_cache
+WHERE case_id = ? AND owner_id = ?;
+
+upsertAssessment:
+INSERT OR REPLACE INTO assessment_cache(case_id, owner_id, assessment_id, payload_json)
+VALUES (?, ?, ?, ?);
+
+selectFeedback:
+SELECT assessment_id, decision, note
+FROM feedback_cache
+WHERE assessment_id = ? AND owner_id = ?;
+
+upsertFeedback:
+INSERT OR REPLACE INTO feedback_cache(assessment_id, owner_id, decision, note)
+VALUES (?, ?, ?, ?);
+
+deleteFeedbackByCase:
+DELETE FROM feedback_cache
+WHERE owner_id = ? AND assessment_id IN (
+    SELECT assessment_id
+    FROM assessment_cache
+    WHERE case_id = ? AND owner_id = ?
+);
+
+deleteAssessmentByCase:
+DELETE FROM assessment_cache
+WHERE case_id = ? AND owner_id = ?;

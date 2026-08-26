@@ -121,17 +121,19 @@ mobile/
     │   ├── src/androidMain/.../data/
     │   │   ├── audio/                  # SileroVadTrimmer (sherpa-onnx), AacM4aEncoder
     │   │   ├── auth/SharedPreferencesAuthTokenStore.kt  # persists the session token
+    │   │   ├── local/AndroidDatabaseFactory.kt     # app-private SQLDelight database
     │   │   ├── platform/AndroidAudioFileReader.kt  # reads recording bytes for upload
     │   │   ├── platform/AndroidAudioFileDeleter.kt # removes the local .m4a on case delete
     │   │   ├── player/MediaPlayerAudioPlayer.kt    # MediaPlayer impl of AudioPlayer
     │   │   └── recorder/VadTrimmingAudioRecorder.kt
     │   └── src/commonMain/.../data/
     │       ├── auth/                   # AuthTokenStore port, FakeGoogleAuthClient (dev)
+    │       ├── local/                   # SQLDelight assessment/feedback persistence
     │       ├── mock/MockAssessmentScenarios.kt  # canned assessments (kept for tests/demo)
     │       ├── platform/                # AudioFileReader + AudioFileDeleter (fun interface ports)
     │       ├── remote/                 # BackendApi (Ktor + bearer token), DTOs + mappers
-    │       └── repository/             # InMemoryCaseRepository, BackendAssessmentRepository,
-    │                                   #   MockAssessmentRepository (unused in app wiring)
+    │       └── repository/             # SqlDelightCaseRepository, BackendAssessmentRepository,
+    │                                   #   in-memory/mock implementations (tests/demo only)
     └── presentation/                   # :shared:presentation — commonMain ViewModels
         └── .../presentation/
             ├── auth/AuthViewModel.kt   # exposes AuthState for the login gate

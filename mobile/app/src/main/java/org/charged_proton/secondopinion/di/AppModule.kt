@@ -8,6 +8,9 @@ import org.charged_proton.secondopinion.data.audio.SileroVadTrimmer
 import org.charged_proton.secondopinion.data.auth.AuthTokenStore
 import org.charged_proton.secondopinion.data.auth.FakeGoogleAuthClient
 import org.charged_proton.secondopinion.data.auth.SharedPreferencesAuthTokenStore
+import org.charged_proton.secondopinion.data.local.AssessmentStore
+import org.charged_proton.secondopinion.data.local.AndroidDatabaseFactory
+import org.charged_proton.secondopinion.data.local.SqlDelightAssessmentStore
 import org.charged_proton.secondopinion.data.platform.AndroidAudioFileDeleter
 import org.charged_proton.secondopinion.data.platform.AndroidAudioFileReader
 import org.charged_proton.secondopinion.data.platform.AudioFileDeleter
@@ -16,8 +19,9 @@ import org.charged_proton.secondopinion.data.player.MediaPlayerAudioPlayer
 import org.charged_proton.secondopinion.data.recorder.VadTrimmingAudioRecorder
 import org.charged_proton.secondopinion.data.remote.createBackendApi
 import org.charged_proton.secondopinion.data.repository.BackendAssessmentRepository
-import org.charged_proton.secondopinion.data.repository.InMemoryCaseRepository
+import org.charged_proton.secondopinion.data.repository.SqlDelightCaseRepository
 import org.charged_proton.secondopinion.domain.auth.AuthClient
+import org.charged_proton.secondopinion.domain.auth.AuthState
 import org.charged_proton.secondopinion.domain.platform.AudioPlayer
 import org.charged_proton.secondopinion.domain.platform.AudioRecorder
 import org.charged_proton.secondopinion.domain.repository.AssessmentRepository
@@ -50,11 +54,23 @@ import org.koin.core.module.dsl.viewModel
 import org.koin.dsl.module
 
 val appModule = module {
-    // Platform + data (in-memory case store until SQLDelight lands)
+    // Platform + persistent local data
     single { SileroVadTrimmer(androidContext().assets) }
     single<AudioRecorder> { VadTrimmingAudioRecorder(androidContext(), get()) }
     single<AudioPlayer> { MediaPlayerAudioPlayer() }
-    single<CaseRepository> { InMemoryCaseRepository() }
+    single { AndroidDatabaseFactory(androidContext()).create() }
+    single<CaseRepository> {
+        val authClient = get<AuthClient>()
+        SqlDelightCaseRepository(get()) {
+            (authClient.authState.value as? AuthState.SignedIn)?.user?.uid
+        }
+    }
+    single<AssessmentStore> {
+        val authClient = get<AuthClient>()
+        SqlDelightAssessmentStore(get()) {
+            (authClient.authState.value as? AuthState.SignedIn)?.user?.uid
+        }
+    }
     single<AudioFileReader> { AndroidAudioFileReader() }
     single<AudioFileDeleter> { AndroidAudioFileDeleter() }
     single<AuthTokenStore> { SharedPreferencesAuthTokenStore(androidContext()) }
@@ -78,7 +94,7 @@ val appModule = module {
             onUnauthorized = { authClient.signOut() },
         )
     }
-    single<AssessmentRepository> { BackendAssessmentRepository(get(), get(), get(), get()) }
+    single<AssessmentRepository> { BackendAssessmentRepository(get(), get(), get(), get(), get()) }
 
     // Use cases
     factory { ObserveAuthStateUseCase(get()) }

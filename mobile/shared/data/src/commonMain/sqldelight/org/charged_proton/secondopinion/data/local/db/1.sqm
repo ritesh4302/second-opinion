@@ -1,0 +1,16 @@
+CREATE TABLE assessment_cache (
+    case_id TEXT NOT NULL,
+    owner_id TEXT NOT NULL,
+    assessment_id TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    PRIMARY KEY(case_id, owner_id),
+    UNIQUE(assessment_id, owner_id)
+);
+
+CREATE TABLE feedback_cache (
+    assessment_id TEXT NOT NULL,
+    owner_id TEXT NOT NULL,
+    decision TEXT NOT NULL,
+    note TEXT,
+    PRIMARY KEY(assessment_id, owner_id)
+);

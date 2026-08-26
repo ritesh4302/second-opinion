@@ -8,9 +8,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import org.charged_proton.secondopinion.data.local.AssessmentStore
 import org.charged_proton.secondopinion.data.platform.AudioFileDeleter
 import org.charged_proton.secondopinion.data.platform.AudioFileReader
 import org.charged_proton.secondopinion.data.remote.BackendApi
@@ -36,14 +35,11 @@ class BackendAssessmentRepository(
     private val caseRepository: CaseRepository,
     private val audioFileReader: AudioFileReader,
     private val audioFileDeleter: AudioFileDeleter,
+    private val assessmentStore: AssessmentStore,
     private val locale: String = "hi-IN",
     private val pollIntervalMillis: Long = 2_000,
     private val maxPollMillis: Long = 15 * 60_000,
 ) : AssessmentRepository {
-
-    private val mutex = Mutex()
-    private val assessmentsByCaseId = mutableMapOf<String, Assessment>()
-    private val feedbackByAssessmentId = mutableMapOf<String, Feedback>()
 
     override fun requestAssessment(caseId: String): Flow<AssessmentProgress> = flow {
         getAssessment(caseId)?.let {
@@ -88,7 +84,7 @@ class BackendAssessmentRepository(
             when (recording.status) {
                 "completed" -> {
                     val assessment = api.getAssessment(caseId).toDomain()
-                    mutex.withLock { assessmentsByCaseId[caseId] = assessment }
+                    assessmentStore.saveAssessment(assessment)
                     caseRepository.updateStatus(caseId, CaseStatus.COMPLETED)
                     emit(AssessmentProgress.Completed(assessment))
                     return
@@ -118,7 +114,7 @@ class BackendAssessmentRepository(
     }
 
     override suspend fun getAssessment(caseId: String): Assessment? {
-        mutex.withLock { assessmentsByCaseId[caseId] }?.let { return it }
+        assessmentStore.getAssessment(caseId)?.let { return it }
         val assessment = try {
             api.getAssessment(caseId).toDomain()
         } catch (cancellation: CancellationException) {
@@ -129,7 +125,7 @@ class BackendAssessmentRepository(
         } catch (unreachable: Exception) {
             return null // treat "can't reach backend" as "not yet available"
         }
-        mutex.withLock { assessmentsByCaseId[caseId] = assessment }
+        assessmentStore.saveAssessment(assessment)
         return assessment
     }
 
@@ -138,11 +134,11 @@ class BackendAssessmentRepository(
             feedback.assessmentId,
             FeedbackRequestDto(decision = feedback.decision.name.lowercase(), note = feedback.note),
         )
-        mutex.withLock { feedbackByAssessmentId[feedback.assessmentId] = feedback }
+        assessmentStore.saveFeedback(feedback)
     }
 
     override suspend fun getFeedback(assessmentId: String): Feedback? =
-        mutex.withLock { feedbackByAssessmentId[assessmentId] }
+        assessmentStore.getFeedback(assessmentId)
 
     override suspend fun deleteCase(caseId: String): Result<Unit> = runCatching {
         try {
@@ -154,9 +150,7 @@ class BackendAssessmentRepository(
         caseRepository.getCase(caseId)?.let { case ->
             withContext(Dispatchers.Default) { audioFileDeleter.delete(case.recording.filePath) }
         }
+        assessmentStore.deleteCase(caseId)
         caseRepository.deleteCase(caseId)
-        mutex.withLock {
-            assessmentsByCaseId.remove(caseId)?.let { feedbackByAssessmentId.remove(it.id) }
-        }
     }
 }
