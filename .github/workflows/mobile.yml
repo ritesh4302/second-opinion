@@ -1,0 +1,90 @@
+name: mobile
+
+on:
+  push:
+    branches: [main]
+    paths: ["mobile/**", ".github/workflows/mobile.yml"]
+  pull_request:
+    paths: ["mobile/**", ".github/workflows/mobile.yml"]
+
+env:
+  FIREBASE_PROJECT_ID: pharmacy-opinion
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle (with build/dependency caching)
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build debug APK and instrumentation test APK
+        run: ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest
+
+      - name: Upload APKs for the Test Lab job
+        uses: actions/upload-artifact@v4
+        with:
+          name: apks
+          path: |
+            mobile/app/build/outputs/apk/debug/app-debug.apk
+            mobile/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+          retention-days: 3
+          if-no-files-found: error
+
+  firebase-test-lab:
+    needs: build
+    # Secrets are unavailable to PRs from forks; run FTL only for pushes and
+    # same-repo pull requests.
+    if: >-
+      github.event_name == 'push' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Download APKs
+        uses: actions/download-artifact@v4
+        with:
+          name: apks
+          path: apks
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
+
+      - name: Set up gcloud CLI
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Run instrumentation tests on Firebase Test Lab
+        run: |
+          gcloud firebase test android run \
+            --project "$FIREBASE_PROJECT_ID" \
+            --type instrumentation \
+            --app apks/debug/app-debug.apk \
+            --test apks/androidTest/debug/app-debug-androidTest.apk \
+            --device model=panther,version=33,locale=en,orientation=portrait \
+            --timeout 20m \
+            --num-flaky-test-attempts 1
+
+      - name: Run Robo test on Firebase Test Lab
+        run: |
+          gcloud firebase test android run \
+            --project "$FIREBASE_PROJECT_ID" \
+            --type robo \
+            --app apks/debug/app-debug.apk \
+            --device model=panther,version=33,locale=en,orientation=portrait \
+            --timeout 10m
