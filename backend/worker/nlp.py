@@ -3,7 +3,7 @@
 Two focused LLM calls per recording — relevance weighting (which speaker is
 the patient, which segments matter) and structured extraction — matching the
 `filtering` / `extracting` states (docs/BACKEND.md §2.2). The provider sits
-behind `NlpModel` so the vendor (sarvam-30b for the POC) can be swapped per
+behind `NlpModel` so the vendor (sarvam-105b for the POC) can be swapped per
 benchmark results without touching pipeline orchestration.
 """
 

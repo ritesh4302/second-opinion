@@ -11,10 +11,13 @@
 - [x] **Implement Celery DLQ/retry logic** — stage tasks now use bounded exponential backoff with
   jitter, sanitized persistent retry metadata, permanent/transient classification, a dedicated
   `pipeline.dlq` route, and operator replay from the failed stage.
-- [ ] Decide the compose default for `SO_SPEECH_PROVIDER` / `SO_NLP_PROVIDER` /
-  `SO_ASSESSMENT_PROVIDER` (still `fake`; real Sarvam needs `SO_SARVAM_API_KEY` — consider an
-  `.env` file for `backend/docker-compose.yml`).
-- [ ] Benchmark a dedicated medical LLM for the `Assessor` port (Q3; sarvam-30b is interim).
+- [x] **Configure real Sarvam providers for local integration** — compose keeps safe `fake`
+  fallbacks, while ignored `backend/.env` settings opt the worker into Saaras v3 and sarvam-105b;
+  the key is injected only into the worker and the full live provider chain has been exercised.
+- [ ] **Configure production Sarvam secret injection** — after selecting a hosting platform,
+  store `SO_SARVAM_API_KEY` in its secret manager, scope it to workers, and add rotation, quota,
+  spend, and provider-failure alerts.
+- [ ] Benchmark a dedicated medical LLM for the `Assessor` port (Q3; sarvam-105b is interim).
 
 ## Mobile UI/UX Gaps
 

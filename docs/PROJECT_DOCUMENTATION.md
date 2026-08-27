@@ -152,7 +152,7 @@ Android app wired to the backend pipeline end-to-end.
 | Data layer | `BackendAssessmentRepository` (Ktor): multipart upload (with consent flag) → status polling → assessment fetch → feedback POST; case deletion = backend DELETE + local audio-file cleanup; in-memory case store (SQLDelight pending); mock repository kept for tests/demo |
 | `AndroidManifest.xml` | `RECORD_AUDIO` + `INTERNET`; debug manifest allows cleartext HTTP to the dev stack |
 | Auth / login | Backend: Firebase ID-token verification (`TokenVerifier` port, `firebase` \| `fake` providers; issuer `securetoken.google.com/<project>`, audience = project id), `users` table (Firebase UID + email + display name), owner-scoped recordings, `GET /v1/auth/me`. App: login gate with Google Sign-In and email/password sign-in/sign-up (`AuthClient` port; production adapter `FirebaseAuthClient` — Credential Manager or email-password → Firebase Auth SDK → backend — selected at runtime when google-services.json is present, fake adapter otherwise), `Authorization: Bearer` on every call, 401 → sign-out |
-| Backend | `backend/` FastAPI + Celery: `POST /v1/recordings` upload → MinIO + Postgres, speech worker (Sarvam Saaras v3 Batch API, native diarization), NLP worker (sarvam-30b relevance filter + structured extraction), assessment worker (sarvam-30b triage: conditions + confidence, red flags, OTC-preferred guidance with `prescription` labels; fake providers for dev), status/assessment/feedback endpoints, Alembic migrations, docker-compose dev stack (see `docs/BACKEND.md`) |
+| Backend | `backend/` FastAPI + Celery: `POST /v1/recordings` upload → MinIO + Postgres, speech worker (Sarvam Saaras v3 Batch API, native diarization), NLP worker (sarvam-105b relevance filter + structured extraction), assessment worker (sarvam-105b triage: conditions + confidence, red flags, OTC-preferred guidance with `prescription` labels; fake providers for dev), status/assessment/feedback endpoints, Alembic migrations, docker-compose dev stack (see `docs/BACKEND.md`) |
 | App ↔ backend | Wired (debug base URL `http://127.0.0.1:8000` via `adb reverse tcp:8000 tcp:8000`); verified end-to-end on emulator against the docker-compose stack incl. feedback persistence; assessment response now includes `symptom_summary` |
 | Tests | Mobile: 96 host unit tests (`commonTest`) + 27 Compose UI tests (`androidTest`); Backend: 50 pytest tests |
 
@@ -168,13 +168,13 @@ Android app wired to the backend pipeline end-to-end.
 - [x] Backend service skeleton + audio upload endpoint
 - [ ] Benchmark ASR candidates (Sarvam vs AI4Bharat vs Scribe) on real pharmacy-style Hinglish audio
 - [x] Diarization integration — Sarvam Batch API native diarization (single vendor; pyannote deferred, see Q2)
-- [x] LLM relevance weighting + irrelevant-segment filtering (sarvam-30b; content-based patient inference per Q1)
-- [x] Structured extraction: symptoms, age, gender, location, duration, severity (sarvam-30b, Pydantic-validated JSON)
+- [x] LLM relevance weighting + irrelevant-segment filtering (sarvam-105b; content-based patient inference per Q1)
+- [x] Structured extraction: symptoms, age, gender, location, duration, severity (sarvam-105b, Pydantic-validated JSON)
 - [x] App ↔ backend integration — Ktor multipart upload → status polling → assessment fetch →
   feedback POST (`BackendAssessmentRepository`), verified end-to-end on emulator
 
 ### Phase 3 — Assessment & decision support
-- [x] Medical AI model integration → assessment + confidence + red flags (interim: sarvam-30b behind the `Assessor` port; dedicated medical LLM pending Q3 benchmark)
+- [x] Medical AI model integration → assessment + confidence + red flags (interim: sarvam-105b behind the `Assessor` port; dedicated medical LLM pending Q3 benchmark)
 - [x] Prescription-drug labeling (requirement change: no hard blocklist) — guidance items
   carry `prescription: true/false` from the assessment stage
 - [x] "Prescription drug" label rendering in the app UI (badge on guidance items with
@@ -205,7 +205,7 @@ Android app wired to the backend pipeline end-to-end.
 |---|---|---|
 | Q1 | How to identify which diarized speaker is the patient | Content-based inference (first-person symptom language) implemented in the NLP stage relevance prompt; accuracy on real pharmacy audio still to be validated |
 | Q2 | ~~Does Sarvam provide adequate diarization natively?~~ | **Answered:** yes — Saaras v3 Batch API supports `with_diarization` (≤1 h, ≤8 speakers); integrated as single-vendor speech stage. Quality on real pharmacy audio still to be validated (benchmark task) |
-| Q3 | Which medical AI model for assessment | Interim: general sarvam-30b behind the `Assessor` port (working end-to-end); dedicated medical LLM (open-source, e.g. MedGemma-class, vs API) still to be benchmarked — drop-in swap |
+| Q3 | Which medical AI model for assessment | Interim: general sarvam-105b behind the `Assessor` port; dedicated medical LLM (open-source, e.g. MedGemma-class, vs API) still to be benchmarked — drop-in swap |
 | Q4 | CDSCO medical-device classification | Legal review required before pilot |
 | Q5 | DPDP Act 2023 compliance | Voice + health data are sensitive; consent capture, erasure (in-app case deletion), and retention sweep are implemented — legal review of the policy itself (window length, consent wording) still needed before real-patient use |
 | Q6 | Liability framing | Pharmacist is final decision-maker; needs explicit in-app disclaimers and terms |

@@ -47,14 +47,14 @@ class Settings(BaseSettings):
 
     # NLP stage (worker): relevance filter + structured extraction.
     nlp_provider: str = "sarvam"  # "sarvam" | "fake"
-    sarvam_chat_model: str = "sarvam-30b"  # sarvam-m is deprecated; 105b for higher quality
+    sarvam_chat_model: str = "sarvam-105b"
     relevance_threshold: float = 0.35  # segments below this weight are discarded
 
     # Assessment stage (worker): triage output. Interim answer to Q3 — a
     # general Sarvam chat model behind the Assessor port until a medical LLM
     # is benchmarked.
     assessment_provider: str = "sarvam"  # "sarvam" | "fake"
-    sarvam_assessment_model: str = "sarvam-30b"
+    sarvam_assessment_model: str = "sarvam-105b"
 
 
 @lru_cache
