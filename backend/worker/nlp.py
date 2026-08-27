@@ -16,6 +16,7 @@ from typing import Protocol
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from app.settings import get_settings
+from worker.errors import ProviderConfigurationError
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +115,7 @@ class SarvamNlp:
 
         settings = get_settings()
         if not settings.sarvam_api_key:
-            raise NlpError("SO_SARVAM_API_KEY is not set")
+            raise ProviderConfigurationError("SO_SARVAM_API_KEY is not set")
         self._client = SarvamAI(api_subscription_key=settings.sarvam_api_key)
         self._model = settings.sarvam_chat_model
 
@@ -183,4 +184,4 @@ def get_nlp_model() -> NlpModel:
         return FakeNlp()
     if provider == "sarvam":
         return SarvamNlp()
-    raise NlpError(f"unknown NLP provider: {provider}")
+    raise ProviderConfigurationError(f"unknown NLP provider: {provider}")

@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     # audio blob + transcript rows of recordings older than this window.
     retention_days: int = 30
 
+    # Celery stage retry policy. max_retries excludes the initial attempt.
+    worker_max_retries: int = 3
+    worker_retry_backoff_seconds: int = 30
+    worker_retry_backoff_max_seconds: int = 900
+    worker_retry_jitter_seconds: int = 15
+
     # Auth: Firebase Google Sign-In; the API verifies Firebase ID tokens
     # (issuer https://securetoken.google.com/<project>, audience = project id).
     # "fake" accepts "fake:<uid>[:<email>[:<name>]]" bearer tokens for local

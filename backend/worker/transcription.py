@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Protocol
 
 from app.settings import get_settings
+from worker.errors import ProviderConfigurationError
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +64,7 @@ class SarvamTranscriber:
 
         settings = get_settings()
         if not settings.sarvam_api_key:
-            raise TranscriptionError("SO_SARVAM_API_KEY is not set")
+            raise ProviderConfigurationError("SO_SARVAM_API_KEY is not set")
         self._client = SarvamAI(api_subscription_key=settings.sarvam_api_key)
         self._model = settings.sarvam_model
         self._timeout_s = settings.sarvam_job_timeout_s
@@ -116,4 +117,4 @@ def get_transcriber() -> Transcriber:
         return FakeTranscriber()
     if provider == "sarvam":
         return SarvamTranscriber()
-    raise TranscriptionError(f"unknown speech provider: {provider}")
+    raise ProviderConfigurationError(f"unknown speech provider: {provider}")

@@ -99,14 +99,20 @@ class BackendAssessmentRepository(
                     emit(AssessmentProgress.Completed(assessment))
                     return
                 }
-                "failed" -> {
+                "failed", "dead_lettered" -> {
                     caseRepository.updateStatus(caseId, CaseStatus.FAILED)
                     val stage = recording.failureStage ?: "unknown"
                     emit(AssessmentProgress.Failed("Pipeline failed at the $stage stage"))
                     return
                 }
                 else -> {
-                    val stage = pipelineStageFor(recording.status)
+                    val stage = pipelineStageFor(
+                        if (recording.status == "retrying") {
+                            recording.failureStage ?: recording.status
+                        } else {
+                            recording.status
+                        },
+                    )
                     if (stage != lastStage) {
                         emit(AssessmentProgress.InProgress(stage))
                         lastStage = stage

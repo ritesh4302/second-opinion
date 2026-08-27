@@ -18,6 +18,7 @@ from typing import Protocol
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from app.settings import get_settings
+from worker.errors import ProviderConfigurationError
 from worker.nlp import parse_llm_json
 
 logger = logging.getLogger(__name__)
@@ -132,7 +133,7 @@ class SarvamAssessor:
 
         settings = get_settings()
         if not settings.sarvam_api_key:
-            raise AssessmentError("SO_SARVAM_API_KEY is not set")
+            raise ProviderConfigurationError("SO_SARVAM_API_KEY is not set")
         self._client = SarvamAI(api_subscription_key=settings.sarvam_api_key)
         self.model_id = settings.sarvam_assessment_model
 
@@ -197,4 +198,4 @@ def get_assessor() -> Assessor:
         return FakeAssessor()
     if provider == "sarvam":
         return SarvamAssessor()
-    raise AssessmentError(f"unknown assessment provider: {provider}")
+    raise ProviderConfigurationError(f"unknown assessment provider: {provider}")

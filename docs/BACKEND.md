@@ -91,9 +91,12 @@ Each recording moves through explicit states, persisted in PostgreSQL:
 
 ```
 UPLOADED → QUEUED → DIARIZING → TRANSCRIBING → FILTERING → EXTRACTING → ASSESSING → COMPLETED
-                                      │ (any stage)
+                                      │ (transient failure)                      ▲
+                                      ▼                                          │
+                    RETRYING (bounded backoff + jitter) ─────────────────────────┘
+                                      │ (permanent or retries exhausted)
                                       ▼
-                              FAILED (with stage + error; retryable up to N times → DLQ)
+                         DEAD_LETTERED → operator replay from failed stage
 ```
 
 Rules:
@@ -103,6 +106,31 @@ Rules:
   result is auditable (medical context demands traceability).
 - Client polls `GET /v1/recordings/{id}` for status; push notifications (FCM) are a later
   optimization.
+- Stage tasks use late acknowledgement, reject work lost with a worker process, and prefetch one
+  job at a time. The default policy is three retries after the initial attempt, 30-second
+  exponential backoff capped at 15 minutes, and up to 15 seconds of jitter.
+- Retry metadata stores only the exception class, failure stage, retry count, and dead-letter
+  timestamp. Provider messages, transcripts, and other health data are never persisted to retry
+  metadata or DLQ payloads.
+
+### 2.3 Dead-letter operations
+
+`recordings.status = 'dead_lettered'` is the durable source of truth. A sanitized task envelope is
+also routed to the unconsumed `pipeline.dlq` Celery queue for operational inspection. After fixing
+the root cause, replay the recorded failed stage with:
+
+```bash
+docker compose exec worker celery -A worker.main.celery_app call \
+  pipeline.replay_dead_letter --args='["<recording-uuid>"]'
+```
+
+To inspect and acknowledge parked envelopes, start a temporary DLQ-only consumer. It logs only
+recording ID, stage, exception class, and source task:
+
+```bash
+docker compose exec worker celery -A worker.main.celery_app worker \
+  --queues=pipeline.dlq --concurrency=1
+```
 
 ## 3. API Surface (v1 draft)
 
@@ -289,17 +317,18 @@ Layout: `backend/` — uv project, Python 3.12, single package `app/` + `worker/
 | `backend/app/models.py` | `User` (Firebase UID + email + display name + role), `Recording` (client-UUID PK, `owner_id` FK, `consent_confirmed`, `audio_purged_at`), `TranscriptSegment`, `Extraction`, `Assessment`, `Feedback` (delete cascades from `Recording`); `RecordingStatus` state machine (§2.2); jsonb with SQLite-compatible variant |
 | `backend/app/schemas.py` | Pydantic response/request models; `UserOut`; `AssessmentOut.symptom_summary` is derived from the `Extraction` row at read time (not stored on `assessments`) |
 | `backend/app/storage.py` | `ObjectStorage` port + boto3 S3/MinIO impl (offloaded via `asyncio.to_thread`) |
-| `backend/app/queue.py` | Celery factory + `enqueue` dependency; API enqueues by task name, never imports worker code |
+| `backend/app/queue.py` | Celery factory + task names/routes; late acknowledgement, worker-loss rejection, one-job prefetch, default `pipeline` queue, and dedicated `pipeline.dlq` route |
 | `backend/app/routers/` | `health` (healthz/readyz), `auth` (`/v1/auth/me`), `recordings` (consent-gated upload / status / assessment / DELETE erasure, owner-scoped), `assessments` (feedback, owner-scoped) |
-| `backend/worker/main.py` | Celery worker entrypoint; speech + NLP + assessment stage tasks + daily retention-sweep beat schedule; structlog setup + per-task `recording_id` context binding |
+| `backend/worker/main.py` | Celery worker entrypoint; bound resilient stage tasks, dead-letter sink/operator replay, daily retention sweep, and per-task observability context |
 | `backend/worker/transcription.py` | `Transcriber` port; `SarvamTranscriber` (Batch API, `with_diarization=True`) + `FakeTranscriber` (dev/demo, `SO_SPEECH_PROVIDER=fake`) |
 | `backend/worker/nlp.py` | `NlpModel` port; `SarvamNlp` (sarvam-30b chat, prompted-JSON + Pydantic validation) + `FakeNlp` (`SO_NLP_PROVIDER=fake`); relevance + extraction prompts |
 | `backend/worker/assessment.py` | `Assessor` port; `SarvamAssessor` (triage prompt: conditions + confidence, red flags, medicine guidance with `prescription: true/false` per item for Schedule H/H1) + `FakeAssessor` (`SO_ASSESSMENT_PROVIDER=fake`); `PROMPT_VERSION` recorded per assessment |
-| `backend/worker/pipeline.py` | `run_speech_stage` (S3 download → transcribe → segments, `transcribing` → `filtering`) + `run_nlp_stage` (relevance weights/discard flags → `extracting` → Extraction row → `assessing`) + `run_assessment_stage` (extraction + kept transcript → Assessment row → `completed`); replace-on-retry persistence, failures set `failed` + stage; structured `stage_done`/`stage_failed` events with `duration_ms` |
+| `backend/worker/pipeline.py` | Idempotent speech, NLP, and assessment persistence; failures record their exact stage and sanitized type before task-level retry/DLQ handling |
+| `backend/worker/retry.py`, `task_resilience.py` | Transient/permanent classification, bounded exponential backoff, sanitized retry/dead-letter metadata, and Celery retry orchestration |
 | `backend/worker/retention.py` | DPDP retention sweep: purges audio objects + transcript rows of recordings older than `SO_RETENTION_DAYS`; `audio_purged_at` marks purged rows (idempotent); scheduled daily via Celery beat |
 | `backend/worker/db.py` | Sync SQLAlchemy session for Celery tasks (psycopg driver on the same DB) |
 | `backend/alembic/` | Async migrations; URL from settings; initial schema revision applied |
-| `backend/tests/` | 50 pytest tests: API (fakes for storage/queue/token-verifier, httpx `ASGITransport`), auth (401s, `/me` provisioning, owner scoping), consent gate + erasure cascade + retention sweep, plus speech/NLP/assessment worker stage tests (sync SQLite, stub providers, Sarvam + LLM-JSON parsers) |
+| `backend/tests/` | 55 pytest tests covering API/auth/consent/retention, all pipeline stages and provider parsers, retry classification/backoff, sanitized metadata, exhaustion/permanent DLQ routing, and operator replay |
 | `backend/docker-compose.yml` | api + worker + Postgres 16 + Redis 7 + MinIO (host ports 9100/9101) + bucket init; api runs `alembic upgrade head` on start |
 | `.github/workflows/backend.yml` | CI: ruff check/format + pytest + Docker image build |
 

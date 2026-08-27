@@ -22,6 +22,9 @@ class RecordingOut(BaseModel):
     id: uuid.UUID
     status: RecordingStatus
     failure_stage: str | None
+    retry_count: int
+    last_error_type: str | None
+    dead_lettered_at: datetime | None
     duration_ms: int
     locale: str
     created_at: datetime

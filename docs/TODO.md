@@ -8,9 +8,9 @@
 - [ ] **Benchmark Sarvam Saaras v3 on real Hinglish audio** — diarization quality (≤8 speakers),
   ASR accuracy on pharmacy-style exchanges, and patient-speaker inference (Q1/Q2 in
   `docs/PROJECT_DOCUMENTATION.md` §9). Only verified on one synthesized two-voice sample so far.
-- [ ] **Implement Celery DLQ/retry logic** — the state machine documents "retryable up to N
-  times → DLQ" (`docs/BACKEND.md` §2.2), but pipeline failures currently just set
-  `failed` + stage in `backend/worker/pipeline.py` with no automated retry or dead-letter path.
+- [x] **Implement Celery DLQ/retry logic** — stage tasks now use bounded exponential backoff with
+  jitter, sanitized persistent retry metadata, permanent/transient classification, a dedicated
+  `pipeline.dlq` route, and operator replay from the failed stage.
 - [ ] Decide the compose default for `SO_SPEECH_PROVIDER` / `SO_NLP_PROVIDER` /
   `SO_ASSESSMENT_PROVIDER` (still `fake`; real Sarvam needs `SO_SARVAM_API_KEY` — consider an
   `.env` file for `backend/docker-compose.yml`).

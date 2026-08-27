@@ -153,6 +153,23 @@ class BackendAssessmentRepositoryTest {
     }
 
     @Test
+    fun requestAssessment_backendRetryAndDeadLetterExposeCorrectStage() = runTest {
+        val caseId = seededCaseId()
+        backend.failureStage = "extracting"
+        backend.recordingStatuses.addAll(listOf("retrying", "dead_lettered"))
+
+        val emissions = repository().requestAssessment(caseId).toList()
+
+        assertEquals(
+            AssessmentProgress.InProgress(PipelineStage.EXTRACTING),
+            emissions[1],
+        )
+        val failed = assertIs<AssessmentProgress.Failed>(emissions.last())
+        assertEquals("Pipeline failed at the extracting stage", failed.reason)
+        assertEquals(CaseStatus.FAILED, caseRepository.getCase(caseId)?.status)
+    }
+
+    @Test
     fun requestAssessment_unknownCase_failsWithoutUpload() = runTest {
         val emissions = repository().requestAssessment("missing").toList()
 

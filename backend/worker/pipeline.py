@@ -16,7 +16,9 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.models import Assessment, Extraction, Recording, RecordingStatus, TranscriptSegment
 from app.storage import ObjectStorage
 from worker.assessment import PROMPT_VERSION, AssessmentError, Assessor, CaseSummary
+from worker.errors import PermanentPipelineError
 from worker.nlp import NlpError, NlpModel, TranscriptLine
+from worker.retry import error_type
 from worker.transcription import Transcriber
 
 # Structured stage events (stage, duration_ms, outcome) are the log-based
@@ -30,8 +32,22 @@ EXTRACT_STAGE = "extracting"
 ASSESS_STAGE = "assessing"
 
 
+class MissingTranscriptError(NlpError, PermanentPipelineError):
+    """Transcript-stage prerequisite data is absent."""
+
+
+class MissingExtractionError(AssessmentError, PermanentPipelineError):
+    """Assessment-stage prerequisite data is absent."""
+
+
 def _elapsed_ms(start: float) -> float:
     return round((time.perf_counter() - start) * 1000, 1)
+
+
+def _clear_last_failure(recording: Recording) -> None:
+    recording.failure_stage = None
+    recording.last_error_type = None
+    recording.dead_lettered_at = None
 
 
 def run_speech_stage(
@@ -73,18 +89,20 @@ def run_speech_stage(
                 for index, segment in enumerate(segments)
             )
             recording.status = RecordingStatus.FILTERING
+            _clear_last_failure(recording)
             session.commit()
-        except Exception:
+        except Exception as exc:
             session.rollback()
             recording.status = RecordingStatus.FAILED
             recording.failure_stage = SPEECH_STAGE
             session.commit()
             # No health data in logs: IDs only (docs/BACKEND.md §8)
-            logger.exception(
+            logger.error(
                 "stage_failed",
                 stage=SPEECH_STAGE,
                 recording_id=recording_id,
                 duration_ms=_elapsed_ms(start),
+                error_type=error_type(exc),
             )
             raise
 
@@ -122,7 +140,7 @@ def run_nlp_stage(
                 .order_by(TranscriptSegment.segment_index)
             ).all()
             if not segments:
-                raise NlpError("no transcript segments to filter")
+                raise MissingTranscriptError("no transcript segments to filter")
 
             lines = [TranscriptLine(s.segment_index, s.speaker_label, s.text) for s in segments]
             relevance = nlp.weigh_relevance(lines)
@@ -157,18 +175,20 @@ def run_nlp_stage(
                 )
             )
             recording.status = RecordingStatus.ASSESSING
+            _clear_last_failure(recording)
             session.commit()
-        except Exception:
+        except Exception as exc:
             session.rollback()
             recording.status = RecordingStatus.FAILED
             recording.failure_stage = stage
             session.commit()
             # No health data in logs: IDs only (docs/BACKEND.md §8)
-            logger.exception(
+            logger.error(
                 "stage_failed",
                 stage=stage,
                 recording_id=recording_id,
                 duration_ms=_elapsed_ms(start),
+                error_type=error_type(exc),
             )
             raise
 
@@ -205,7 +225,7 @@ def run_assessment_stage(
                 select(Extraction).where(Extraction.recording_id == rid)
             ).one_or_none()
             if extraction is None:
-                raise AssessmentError("no extraction to assess")
+                raise MissingExtractionError("no extraction to assess")
 
             kept = session.scalars(
                 select(TranscriptSegment)
@@ -238,18 +258,20 @@ def run_assessment_stage(
                 )
             )
             recording.status = RecordingStatus.COMPLETED
+            _clear_last_failure(recording)
             session.commit()
-        except Exception:
+        except Exception as exc:
             session.rollback()
             recording.status = RecordingStatus.FAILED
             recording.failure_stage = ASSESS_STAGE
             session.commit()
             # No health data in logs: IDs only (docs/BACKEND.md §8)
-            logger.exception(
+            logger.error(
                 "stage_failed",
                 stage=ASSESS_STAGE,
                 recording_id=recording_id,
                 duration_ms=_elapsed_ms(start),
+                error_type=error_type(exc),
             )
             raise
 
