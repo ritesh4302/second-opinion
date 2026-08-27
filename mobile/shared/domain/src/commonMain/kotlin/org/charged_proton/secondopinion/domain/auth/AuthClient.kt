@@ -28,6 +28,13 @@ enum class EmailAuthError {
 
 class EmailAuthException(val error: EmailAuthError) : Exception("Email auth failed: $error")
 
+enum class PasswordResetError {
+    INVALID_EMAIL,
+}
+
+class PasswordResetException(val error: PasswordResetError) :
+    Exception("Password reset failed: $error")
+
 /**
  * Port for Firebase authentication (Google Sign-In plus email/password).
  * Adapters: `FakeGoogleAuthClient` (dev/test, pairs with the backend's fake
@@ -48,6 +55,9 @@ interface AuthClient {
 
     /** Creates an email/password account and signs the pharmacist in. */
     suspend fun signUpWithEmail(email: String, password: String): Result<AuthUser>
+
+    /** Sends a password-reset link without revealing whether the account exists. */
+    suspend fun sendPasswordResetEmail(email: String): Result<Unit>
 
     /** Backend bearer token (a Firebase ID token in production), or null when signed out. */
     suspend fun currentToken(): String?

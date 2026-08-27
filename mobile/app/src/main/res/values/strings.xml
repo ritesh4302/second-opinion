@@ -10,11 +10,16 @@
     <string name="login_email_sign_up">Create account</string>
     <string name="login_switch_to_sign_up">New here? Create an account</string>
     <string name="login_switch_to_sign_in">Already have an account? Sign in</string>
+    <string name="login_forgot_password">Forgot password?</string>
+    <string name="login_sending_reset">Sending reset link…</string>
+    <string name="login_reset_sent">If an account exists for this email, a password-reset link has been sent.</string>
     <string name="login_or">or</string>
     <string name="login_error_sign_in_failed">Could not sign in. Please try again.</string>
     <string name="login_error_invalid_credentials">Incorrect email or password.</string>
     <string name="login_error_email_in_use">An account with this email already exists.</string>
     <string name="login_error_weak_password">Password is too weak — use at least 6 characters.</string>
+    <string name="login_error_invalid_email">Enter a valid email address.</string>
+    <string name="login_error_reset_failed">Could not send the reset link. Please try again.</string>
     <string name="sign_out">Sign out</string>
 
     <string name="speak">Speak</string>

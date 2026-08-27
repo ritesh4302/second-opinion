@@ -28,6 +28,8 @@ import org.charged_proton.secondopinion.domain.auth.AuthState
 import org.charged_proton.secondopinion.domain.auth.AuthUser
 import org.charged_proton.secondopinion.domain.auth.EmailAuthError
 import org.charged_proton.secondopinion.domain.auth.EmailAuthException
+import org.charged_proton.secondopinion.domain.auth.PasswordResetError
+import org.charged_proton.secondopinion.domain.auth.PasswordResetException
 import org.charged_proton.secondopinion.domain.auth.SignInCancelledException
 
 /**
@@ -100,6 +102,20 @@ class FirebaseAuthClient(
 
     override suspend fun signUpWithEmail(email: String, password: String): Result<AuthUser> =
         emailAuth { firebaseAuth.createUserWithEmailAndPassword(email, password) }
+
+    override suspend fun sendPasswordResetEmail(email: String): Result<Unit> = try {
+        firebaseAuth.sendPasswordResetEmail(email).await()
+        Result.success(Unit)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: FirebaseAuthInvalidUserException) {
+        // Do not expose whether an email address has a Firebase account.
+        Result.success(Unit)
+    } catch (e: FirebaseAuthInvalidCredentialsException) {
+        Result.failure(PasswordResetException(PasswordResetError.INVALID_EMAIL))
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
 
     /** Runs a Firebase email/password call, mapping SDK failures to [EmailAuthException]. */
     private suspend fun emailAuth(authCall: () -> Task<AuthResult>): Result<AuthUser> = try {

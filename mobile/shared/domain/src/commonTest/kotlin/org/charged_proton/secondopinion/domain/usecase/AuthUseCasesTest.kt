@@ -9,6 +9,8 @@ import org.charged_proton.secondopinion.domain.auth.AuthState
 import org.charged_proton.secondopinion.domain.auth.EmailAuthError
 import org.charged_proton.secondopinion.domain.auth.EmailAuthException
 import org.charged_proton.secondopinion.domain.auth.SignInCancelledException
+import org.charged_proton.secondopinion.domain.auth.PasswordResetError
+import org.charged_proton.secondopinion.domain.auth.PasswordResetException
 import org.charged_proton.secondopinion.domain.testutil.FakeAuthClient
 
 class AuthUseCasesTest {
@@ -70,6 +72,27 @@ class AuthUseCasesTest {
 
         assertEquals(1, authClient.signOutCalls)
         assertEquals(AuthState.SignedOut, authClient.authState.value)
+    }
+
+    @Test
+    fun resetPassword_trimsEmail_andPropagatesSuccess() = runTest {
+        val result = ResetPasswordUseCase(authClient)(" jane@pharmacy.org ")
+
+        assertTrue(result.isSuccess)
+        assertEquals(1, authClient.passwordResetCalls)
+        assertEquals("jane@pharmacy.org", authClient.lastEmail)
+        assertEquals(AuthState.SignedOut, authClient.authState.value)
+    }
+
+    @Test
+    fun resetPassword_propagatesInvalidEmail() = runTest {
+        val result = ResetPasswordUseCase(authClient)("invalid")
+
+        assertEquals(
+            PasswordResetError.INVALID_EMAIL,
+            assertIs<PasswordResetException>(result.exceptionOrNull()).error,
+        )
+        assertEquals(0, authClient.passwordResetCalls)
     }
 
     @Test

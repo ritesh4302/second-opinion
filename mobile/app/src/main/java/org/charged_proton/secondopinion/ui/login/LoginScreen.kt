@@ -65,6 +65,7 @@ fun LoginScreen(
             value = uiState.email,
             onValueChange = viewModel::onEmailChange,
             label = { Text(stringResource(R.string.login_email_label)) },
+            enabled = !uiState.isBusy,
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
             modifier = Modifier.fillMaxWidth(),
@@ -74,11 +75,29 @@ fun LoginScreen(
             value = uiState.password,
             onValueChange = viewModel::onPasswordChange,
             label = { Text(stringResource(R.string.login_password_label)) },
+            enabled = !uiState.isBusy,
             singleLine = true,
             visualTransformation = PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
             modifier = Modifier.fillMaxWidth(),
         )
+        if (!uiState.isSignUp) {
+            TextButton(
+                onClick = viewModel::onForgotPassword,
+                enabled = uiState.canResetPassword,
+                modifier = Modifier.align(Alignment.End),
+            ) {
+                Text(
+                    stringResource(
+                        if (uiState.isResettingPassword) {
+                            R.string.login_sending_reset
+                        } else {
+                            R.string.login_forgot_password
+                        },
+                    ),
+                )
+            }
+        }
         Spacer(modifier = Modifier.height(16.dp))
         Button(
             onClick = viewModel::onSubmitEmail,
@@ -91,7 +110,7 @@ fun LoginScreen(
                 ),
             )
         }
-        TextButton(onClick = viewModel::onToggleSignUp, enabled = !uiState.isSubmitting) {
+        TextButton(onClick = viewModel::onToggleSignUp, enabled = !uiState.isBusy) {
             Text(
                 stringResource(
                     if (uiState.isSignUp) R.string.login_switch_to_sign_in else R.string.login_switch_to_sign_up,
@@ -107,10 +126,19 @@ fun LoginScreen(
         Spacer(modifier = Modifier.height(8.dp))
         OutlinedButton(
             onClick = viewModel::onSignIn,
-            enabled = !uiState.isSubmitting,
+            enabled = !uiState.isBusy,
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(stringResource(R.string.login_google))
+        }
+
+        if (uiState.passwordResetSent) {
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = stringResource(R.string.login_reset_sent),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
         }
 
         uiState.error?.let { error ->
@@ -129,4 +157,6 @@ private fun LoginError.toStringRes(): Int = when (this) {
     LoginError.INVALID_CREDENTIALS -> R.string.login_error_invalid_credentials
     LoginError.EMAIL_ALREADY_IN_USE -> R.string.login_error_email_in_use
     LoginError.WEAK_PASSWORD -> R.string.login_error_weak_password
+    LoginError.INVALID_EMAIL -> R.string.login_error_invalid_email
+    LoginError.PASSWORD_RESET_FAILED -> R.string.login_error_reset_failed
 }

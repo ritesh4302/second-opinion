@@ -14,6 +14,7 @@ import org.charged_proton.secondopinion.domain.auth.AuthState
 import org.charged_proton.secondopinion.domain.auth.EmailAuthError
 import org.charged_proton.secondopinion.domain.auth.EmailAuthException
 import org.charged_proton.secondopinion.domain.auth.SignInCancelledException
+import org.charged_proton.secondopinion.domain.usecase.ResetPasswordUseCase
 import org.charged_proton.secondopinion.domain.usecase.SignInUseCase
 import org.charged_proton.secondopinion.domain.usecase.SignInWithEmailUseCase
 import org.charged_proton.secondopinion.domain.usecase.SignUpWithEmailUseCase
@@ -38,6 +39,7 @@ class LoginViewModelTest {
         SignInUseCase(authClient),
         SignInWithEmailUseCase(authClient),
         SignUpWithEmailUseCase(authClient),
+        ResetPasswordUseCase(authClient),
     )
 
     @Test
@@ -168,5 +170,51 @@ class LoginViewModelTest {
         vm.onPasswordChange("corrected")
 
         assertNull(vm.uiState.value.error)
+    }
+
+    @Test
+    fun forgotPassword_sendsTrimmedEmailAndShowsGenericConfirmation() {
+        val vm = viewModel()
+        vm.onEmailChange(" jane@pharmacy.org ")
+
+        vm.onForgotPassword()
+
+        assertEquals(1, authClient.passwordResetCalls)
+        assertEquals("jane@pharmacy.org", authClient.lastEmail)
+        assertEquals(true, vm.uiState.value.passwordResetSent)
+        assertNull(vm.uiState.value.error)
+    }
+
+    @Test
+    fun forgotPassword_withInvalidEmail_showsValidationError() {
+        val vm = viewModel()
+        vm.onEmailChange("invalid")
+
+        vm.onForgotPassword()
+
+        assertEquals(LoginError.INVALID_EMAIL, vm.uiState.value.error)
+        assertEquals(false, vm.uiState.value.passwordResetSent)
+        assertEquals(0, authClient.passwordResetCalls)
+    }
+
+    @Test
+    fun forgotPassword_withBlankEmail_doesNothing() {
+        val vm = viewModel()
+
+        vm.onForgotPassword()
+
+        assertEquals(0, authClient.passwordResetCalls)
+    }
+
+    @Test
+    fun forgotPassword_deliveryFailure_showsGenericError() {
+        authClient.signInError = RuntimeException("network down")
+        val vm = viewModel()
+        vm.onEmailChange("jane@pharmacy.org")
+
+        vm.onForgotPassword()
+
+        assertEquals(LoginError.PASSWORD_RESET_FAILED, vm.uiState.value.error)
+        assertEquals(false, vm.uiState.value.passwordResetSent)
     }
 }

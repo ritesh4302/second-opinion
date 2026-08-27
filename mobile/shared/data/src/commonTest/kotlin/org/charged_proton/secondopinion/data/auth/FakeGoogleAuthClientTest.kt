@@ -100,4 +100,15 @@ class FakeGoogleAuthClientTest {
         assertNull(tokenStore.token)
         assertNull(client.currentToken())
     }
+
+    @Test
+    fun passwordReset_succeedsWithoutChangingSession() = runTest {
+        val client = FakeGoogleAuthClient(tokenStore)
+
+        val result = client.sendPasswordResetEmail("jane@pharmacy.org")
+
+        assertEquals(true, result.isSuccess)
+        assertEquals(AuthState.SignedOut, client.authState.value)
+        assertNull(tokenStore.token)
+    }
 }

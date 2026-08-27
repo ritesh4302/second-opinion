@@ -31,8 +31,9 @@
   WorkManager runs unique network-constrained uploads with five bounded exponential-backoff
   attempts, the assessment UI supports manual retry, and new audio is stored under app-private
   durable storage instead of the evictable cache.
-- [ ] **"Forgot password" UX** — Firebase `sendPasswordResetEmail` flow from the login screen
-  (plus consider email verification on sign-up).
+- [x] **"Forgot password" UX** — the login screen validates and normalizes email, invokes
+  Firebase `sendPasswordResetEmail`, avoids account-enumeration messaging, and surfaces localized
+  success/failure state. Email verification on sign-up remains a separate product decision.
 - [ ] **Legal disclaimers** — explicit in-app terms/liability framing (Q6): pharmacist is the
   final decision-maker; needed before pilot alongside the existing per-assessment disclaimer.
 

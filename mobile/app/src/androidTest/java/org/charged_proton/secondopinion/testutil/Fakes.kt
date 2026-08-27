@@ -124,6 +124,7 @@ class FakeAuthClient : AuthClient {
     var signOutCalls = 0
     var emailSignInCalls = 0
     var emailSignUpCalls = 0
+    var passwordResetCalls = 0
     var lastEmail: String? = null
     var lastPassword: String? = null
 
@@ -145,6 +146,13 @@ class FakeAuthClient : AuthClient {
     override suspend fun signUpWithEmail(email: String, password: String): Result<AuthUser> {
         emailSignUpCalls++
         return emailAuth(email, password)
+    }
+
+    override suspend fun sendPasswordResetEmail(email: String): Result<Unit> {
+        passwordResetCalls++
+        lastEmail = email
+        signInError?.let { return Result.failure(it) }
+        return Result.success(Unit)
     }
 
     private fun emailAuth(email: String, password: String): Result<AuthUser> {

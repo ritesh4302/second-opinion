@@ -37,6 +37,9 @@ class FakeGoogleAuthClient(private val tokenStore: AuthTokenStore) : AuthClient 
     override suspend fun signUpWithEmail(email: String, password: String): Result<AuthUser> =
         signInWithEmail(email, password)
 
+    override suspend fun sendPasswordResetEmail(email: String): Result<Unit> =
+        Result.success(Unit)
+
     private fun signInAs(user: AuthUser): Result<AuthUser> {
         tokenStore.writeToken("fake:${user.uid}:${user.email}:${user.displayName}")
         _authState.value = AuthState.SignedIn(user)

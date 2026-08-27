@@ -10,10 +10,13 @@ import kotlinx.coroutines.launch
 import org.charged_proton.secondopinion.domain.auth.AuthUser
 import org.charged_proton.secondopinion.domain.auth.EmailAuthError
 import org.charged_proton.secondopinion.domain.auth.EmailAuthException
+import org.charged_proton.secondopinion.domain.auth.PasswordResetError
+import org.charged_proton.secondopinion.domain.auth.PasswordResetException
 import org.charged_proton.secondopinion.domain.auth.SignInCancelledException
 import org.charged_proton.secondopinion.domain.usecase.SignInUseCase
 import org.charged_proton.secondopinion.domain.usecase.SignInWithEmailUseCase
 import org.charged_proton.secondopinion.domain.usecase.SignUpWithEmailUseCase
+import org.charged_proton.secondopinion.domain.usecase.ResetPasswordUseCase
 
 /**
  * Drives sign-in: the Google button launches the interactive picker flow, and
@@ -26,13 +29,14 @@ class LoginViewModel(
     private val signIn: SignInUseCase,
     private val signInWithEmail: SignInWithEmailUseCase,
     private val signUpWithEmail: SignUpWithEmailUseCase,
+    private val resetPassword: ResetPasswordUseCase,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(LoginUiState())
     val uiState: StateFlow<LoginUiState> = _uiState.asStateFlow()
 
     fun onEmailChange(email: String) {
-        _uiState.update { it.copy(email = email, error = null) }
+        _uiState.update { it.copy(email = email, error = null, passwordResetSent = false) }
     }
 
     fun onPasswordChange(password: String) {
@@ -40,7 +44,9 @@ class LoginViewModel(
     }
 
     fun onToggleSignUp() {
-        _uiState.update { it.copy(isSignUp = !it.isSignUp, error = null) }
+        _uiState.update {
+            it.copy(isSignUp = !it.isSignUp, error = null, passwordResetSent = false)
+        }
     }
 
     fun onSignIn() = submit { signIn() }
@@ -57,9 +63,33 @@ class LoginViewModel(
         }
     }
 
+    fun onForgotPassword() {
+        val state = _uiState.value
+        if (!state.canResetPassword) return
+        _uiState.update {
+            it.copy(isResettingPassword = true, passwordResetSent = false, error = null)
+        }
+        viewModelScope.launch {
+            resetPassword(state.email)
+                .onSuccess {
+                    _uiState.update {
+                        it.copy(isResettingPassword = false, passwordResetSent = true)
+                    }
+                }
+                .onFailure { failure ->
+                    _uiState.update {
+                        it.copy(
+                            isResettingPassword = false,
+                            error = failure.toPasswordResetError(),
+                        )
+                    }
+                }
+        }
+    }
+
     private fun submit(authCall: suspend () -> Result<AuthUser>) {
-        if (_uiState.value.isSubmitting) return
-        _uiState.update { it.copy(isSubmitting = true, error = null) }
+        if (_uiState.value.isBusy) return
+        _uiState.update { it.copy(isSubmitting = true, error = null, passwordResetSent = false) }
         viewModelScope.launch {
             authCall()
                 .onSuccess { _uiState.update { it.copy(isSubmitting = false) } }
@@ -68,6 +98,13 @@ class LoginViewModel(
                 }
         }
     }
+}
+
+private fun Throwable.toPasswordResetError(): LoginError = when (this) {
+    is PasswordResetException -> when (error) {
+        PasswordResetError.INVALID_EMAIL -> LoginError.INVALID_EMAIL
+    }
+    else -> LoginError.PASSWORD_RESET_FAILED
 }
 
 private fun Throwable.toLoginError(): LoginError? = when (this) {

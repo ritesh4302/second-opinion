@@ -13,6 +13,7 @@ import org.charged_proton.secondopinion.domain.auth.EmailAuthException
 import org.charged_proton.secondopinion.domain.usecase.SignInUseCase
 import org.charged_proton.secondopinion.domain.usecase.SignInWithEmailUseCase
 import org.charged_proton.secondopinion.domain.usecase.SignUpWithEmailUseCase
+import org.charged_proton.secondopinion.domain.usecase.ResetPasswordUseCase
 import org.charged_proton.secondopinion.presentation.login.LoginViewModel
 import org.charged_proton.secondopinion.testutil.FakeAuthClient
 import org.charged_proton.secondopinion.ui.theme.SecondOpinionTheme
@@ -38,6 +39,7 @@ class LoginScreenTest {
         SignInUseCase(authClient),
         SignInWithEmailUseCase(authClient),
         SignUpWithEmailUseCase(authClient),
+        ResetPasswordUseCase(authClient),
     )
 
     private fun string(resId: Int): String = composeRule.activity.getString(resId)
@@ -123,5 +125,16 @@ class LoginScreenTest {
 
         composeRule.onNodeWithText(string(R.string.login_error_invalid_credentials))
             .assertIsDisplayed()
+    }
+
+    @Test
+    fun forgotPassword_sendsResetAndShowsGenericConfirmation() {
+        composeRule.onNodeWithText(string(R.string.login_email_label))
+            .performTextInput("jane@pharmacy.org")
+
+        composeRule.onNodeWithText(string(R.string.login_forgot_password)).performClick()
+
+        composeRule.onNodeWithText(string(R.string.login_reset_sent)).assertIsDisplayed()
+        assertEquals(1, authClient.passwordResetCalls)
     }
 }
