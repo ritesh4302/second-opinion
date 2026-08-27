@@ -34,8 +34,12 @@
 - [x] **"Forgot password" UX** — the login screen validates and normalizes email, invokes
   Firebase `sendPasswordResetEmail`, avoids account-enumeration messaging, and surfaces localized
   success/failure state. Email verification on sign-up remains a separate product decision.
-- [ ] **Legal disclaimers** — explicit in-app terms/liability framing (Q6): pharmacist is the
-  final decision-maker; needed before pilot alongside the existing per-assessment disclaimer.
+- [x] **Legal disclaimers and terms UX** — signed-in users must explicitly accept the current
+  version of the Terms and Privacy Notice; acceptance is timestamped per pharmacist. Login and
+  authenticated screens retain document links, and CDS responsibility is always visible.
+- [ ] **Professional legal review** — qualified Indian healthcare/privacy counsel must finalize
+  the draft Terms, DPDP notice, consent wording, retention policy, grievance contact, processor
+  contracts, and pharmacist-liability framing before any real-patient pilot.
 
 ## Real Device Hardening
 

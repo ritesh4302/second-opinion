@@ -13,6 +13,9 @@ import org.charged_proton.secondopinion.data.local.AndroidDatabaseFactory
 import org.charged_proton.secondopinion.data.local.SqlDelightAssessmentStore
 import org.charged_proton.secondopinion.data.local.SqlDelightUploadQueueStore
 import org.charged_proton.secondopinion.data.local.UploadQueueStore
+import org.charged_proton.secondopinion.data.legal.LegalAcceptanceStore
+import org.charged_proton.secondopinion.data.legal.PersistentLegalConsentRepository
+import org.charged_proton.secondopinion.data.legal.SharedPreferencesLegalAcceptanceStore
 import org.charged_proton.secondopinion.data.platform.AndroidAudioFileDeleter
 import org.charged_proton.secondopinion.data.platform.AndroidAudioFileReader
 import org.charged_proton.secondopinion.data.platform.AudioFileDeleter
@@ -27,15 +30,18 @@ import org.charged_proton.secondopinion.data.repository.QueuedAssessmentReposito
 import org.charged_proton.secondopinion.data.repository.SqlDelightCaseRepository
 import org.charged_proton.secondopinion.domain.auth.AuthClient
 import org.charged_proton.secondopinion.domain.auth.AuthState
+import org.charged_proton.secondopinion.domain.legal.LegalConsentRepository
 import org.charged_proton.secondopinion.domain.platform.AudioPlayer
 import org.charged_proton.secondopinion.domain.platform.AudioRecorder
 import org.charged_proton.secondopinion.domain.repository.AssessmentRepository
 import org.charged_proton.secondopinion.domain.repository.CaseRepository
+import org.charged_proton.secondopinion.domain.usecase.AcceptLegalTermsUseCase
 import org.charged_proton.secondopinion.domain.usecase.CreateCaseUseCase
 import org.charged_proton.secondopinion.domain.usecase.DeleteCaseUseCase
 import org.charged_proton.secondopinion.domain.usecase.GetAssessmentUseCase
 import org.charged_proton.secondopinion.domain.usecase.GetCaseUseCase
 import org.charged_proton.secondopinion.domain.usecase.GetFeedbackUseCase
+import org.charged_proton.secondopinion.domain.usecase.GetLegalAcceptanceUseCase
 import org.charged_proton.secondopinion.domain.usecase.ObserveAuthStateUseCase
 import org.charged_proton.secondopinion.domain.usecase.ObserveCasesUseCase
 import org.charged_proton.secondopinion.domain.usecase.PlayRecordingUseCase
@@ -54,6 +60,7 @@ import org.charged_proton.secondopinion.presentation.assessment.AssessmentViewMo
 import org.charged_proton.secondopinion.presentation.auth.AuthViewModel
 import org.charged_proton.secondopinion.presentation.history.HistoryViewModel
 import org.charged_proton.secondopinion.presentation.login.LoginViewModel
+import org.charged_proton.secondopinion.presentation.legal.LegalConsentViewModel
 import org.charged_proton.secondopinion.presentation.symptom.SymptomViewModel
 import org.charged_proton.secondopinion.queue.WorkManagerAssessmentScheduler
 import org.koin.android.ext.koin.androidContext
@@ -87,6 +94,10 @@ val appModule = module {
     single<AudioFileReader> { AndroidAudioFileReader() }
     single<AudioFileDeleter> { AndroidAudioFileDeleter() }
     single<AuthTokenStore> { SharedPreferencesAuthTokenStore(androidContext()) }
+    single<LegalAcceptanceStore> { SharedPreferencesLegalAcceptanceStore(androidContext()) }
+    single<LegalConsentRepository> {
+        PersistentLegalConsentRepository(get(), System::currentTimeMillis)
+    }
     // Real Firebase Google Sign-In when the Firebase project config
     // (google-services.json) is present (FirebaseInitProvider then initialises
     // a FirebaseApp on startup); otherwise the fake client, which pairs with
@@ -134,10 +145,13 @@ val appModule = module {
     factory { GetAssessmentUseCase(get()) }
     factory { SubmitFeedbackUseCase(get()) }
     factory { GetFeedbackUseCase(get()) }
+    factory { GetLegalAcceptanceUseCase(get()) }
+    factory { AcceptLegalTermsUseCase(get()) }
 
     // ViewModels
     viewModel { AuthViewModel(get(), get()) }
     viewModel { LoginViewModel(get(), get(), get(), get()) }
+    viewModel { (userId: String) -> LegalConsentViewModel(userId, get(), get()) }
     viewModel { SymptomViewModel(get(), get(), get(), get()) }
     viewModel { (caseId: String) -> AssessmentViewModel(caseId, get(), get(), get()) }
     viewModel { HistoryViewModel(get(), get(), get(), get()) }

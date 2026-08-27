@@ -68,4 +68,23 @@
     <string name="case_status_processing">Processing…</string>
     <string name="case_status_completed">Assessment ready</string>
     <string name="case_status_failed">Assessment failed</string>
+
+    <string name="close">Close</string>
+    <string name="legal_terms_title">Terms of Use</string>
+    <string name="legal_privacy_title">Privacy Notice</string>
+    <string name="legal_gate_title">Before you continue</string>
+    <string name="legal_gate_intro">Review these important limits before using Second Opinion.</string>
+    <string name="legal_cds_warning">This is AI-assisted clinical decision support, not a diagnosis, prescription, or substitute for professional judgment.</string>
+    <string name="legal_responsibility_warning">A qualified pharmacist must independently verify symptoms, medicines, doses, contraindications, interactions, and referral decisions.</string>
+    <string name="legal_emergency_warning">Do not use this app for emergencies. Direct patients with urgent or red-flag symptoms to appropriate emergency care.</string>
+    <string name="legal_recording_warning">Record or upload a conversation only after obtaining valid patient consent and following applicable law and workplace policy.</string>
+    <string name="legal_data_warning">Audio, transcripts, assessments, and feedback may be processed by the configured backend and AI providers. Avoid unnecessary patient identifiers.</string>
+    <string name="legal_draft_notice">Draft notice: these terms and privacy disclosures require review by qualified Indian healthcare and privacy counsel before real-patient deployment.</string>
+    <string name="legal_acknowledgement">I have read and accept the Terms of Use and Privacy Notice, and I understand that I remain responsible for every clinical decision.</string>
+    <string name="legal_accept_continue">Accept and continue</string>
+    <string name="legal_accepting">Saving acceptance…</string>
+    <string name="legal_acceptance_failed">Acceptance could not be saved. Please try again.</string>
+    <string name="cds_short_disclaimer">Decision support only — not a diagnosis or prescription. Verify all output and refer emergencies.</string>
+    <string name="legal_terms_body">Effective draft: 27 August 2026\n\nSecond Opinion is intended only for qualified pharmacy professionals as clinical decision support. It does not provide medical diagnosis, prescribe treatment, replace independent professional judgment, or support emergency response.\n\nYou are responsible for verifying all generated content, medicine classifications, doses, contraindications, interactions, red flags, and referrals before acting. Generated output may be incomplete, inaccurate, or unavailable.\n\nYou must obtain valid recording consent, protect patient confidentiality, comply with applicable healthcare, pharmacy, privacy, and workplace requirements, and avoid unnecessary identifiers. You must not use the service for unlawful, deceptive, discriminatory, or unsafe purposes.\n\nThe service is provided without a guarantee of clinical accuracy or uninterrupted availability. These terms may change; a new version requires renewed acknowledgement.\n\nThis draft is not legal advice and must be approved by qualified counsel before real-patient deployment.</string>
+    <string name="legal_privacy_body">Effective draft: 27 August 2026\n\nData processed may include account identifiers, symptom audio, transcripts, structured symptom details, assessments, pharmacist feedback, and technical diagnostics.\n\nData is used to authenticate users, transcribe recordings, generate decision-support assessments, display history, improve reliability, and meet security or legal obligations. Audio and derived health information may be sent to the configured backend and third-party AI providers.\n\nCase data remains in app-private storage and configured backend storage until deleted or removed under the deployment retention policy. Using Delete in case history requests deletion of the associated case data.\n\nAccess must be limited to authorized personnel. Do not enter unnecessary direct identifiers. Questions, access requests, corrections, and deletion requests should be directed to the organization deploying this application.\n\nThis draft does not establish DPDP Act compliance by itself. The deploying organization must finalize notices, lawful basis, consent, retention, processor contracts, safeguards, grievance contacts, and incident procedures with qualified counsel.</string>
 </resources>

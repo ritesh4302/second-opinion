@@ -28,6 +28,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.charged_proton.secondopinion.R
 import org.charged_proton.secondopinion.presentation.login.LoginError
 import org.charged_proton.secondopinion.presentation.login.LoginViewModel
+import org.charged_proton.secondopinion.ui.legal.LegalLinks
 import org.koin.androidx.compose.koinViewModel
 
 /**
@@ -149,6 +150,7 @@ fun LoginScreen(
                 color = MaterialTheme.colorScheme.error,
             )
         }
+        LegalLinks()
     }
 }
 

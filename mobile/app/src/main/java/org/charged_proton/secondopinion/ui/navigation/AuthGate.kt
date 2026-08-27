@@ -24,6 +24,11 @@ fun AuthGate(
     when (authState) {
         AuthState.Unknown -> Unit // blank frame while the session restores
         AuthState.SignedOut -> LoginScreen(modifier = modifier)
-        is AuthState.SignedIn -> AppNavHost(modifier = modifier)
+        is AuthState.SignedIn -> LegalGate(
+            userId = (authState as AuthState.SignedIn).user.uid,
+            modifier = modifier,
+        ) {
+            AppNavHost(modifier = modifier)
+        }
     }
 }

@@ -33,6 +33,7 @@ import org.charged_proton.secondopinion.domain.auth.AuthState
 import org.charged_proton.secondopinion.presentation.auth.AuthViewModel
 import org.charged_proton.secondopinion.presentation.symptom.SymptomStatus
 import org.charged_proton.secondopinion.presentation.symptom.SymptomViewModel
+import org.charged_proton.secondopinion.ui.legal.LegalLinks
 import org.koin.androidx.compose.koinViewModel
 
 /** Symptom capture: record, then hand the created case off to assessment. */
@@ -128,12 +129,19 @@ fun RecordScreen(
 
         Spacer(modifier = Modifier.weight(1f))
 
+        Text(
+            text = stringResource(R.string.cds_short_disclaimer),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
         OutlinedButton(
             onClick = onOpenHistory,
             modifier = Modifier.fillMaxWidth()
         ) {
             Text(text = stringResource(R.string.view_history))
         }
+        LegalLinks()
     }
 
     if (uiState.awaitingConsent) {
