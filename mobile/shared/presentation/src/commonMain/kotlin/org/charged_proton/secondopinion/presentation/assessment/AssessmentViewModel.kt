@@ -2,6 +2,7 @@ package org.charged_proton.secondopinion.presentation.assessment
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -28,22 +29,51 @@ class AssessmentViewModel(
 
     private val _uiState = MutableStateFlow(AssessmentUiState())
     val uiState: StateFlow<AssessmentUiState> = _uiState.asStateFlow()
+    private var requestJob: Job? = null
 
     init {
-        viewModelScope.launch {
+        startRequest()
+    }
+
+    fun onRetry() = startRequest()
+
+    private fun startRequest() {
+        requestJob?.cancel()
+        _uiState.update { it.copy(errorMessage = null) }
+        requestJob = viewModelScope.launch {
             requestAssessment(caseId)
                 .catch { e ->
-                    _uiState.update { it.copy(stage = null, errorMessage = e.message ?: "Assessment failed") }
+                    _uiState.update {
+                        it.copy(
+                            isQueued = false,
+                            stage = null,
+                            errorMessage = e.message ?: "Assessment failed",
+                        )
+                    }
                 }
                 .collect { progress ->
                     when (progress) {
+                        is AssessmentProgress.Queued ->
+                            _uiState.update {
+                                it.copy(
+                                    isQueued = true,
+                                    queueAttemptCount = progress.attemptCount,
+                                    lastQueueError = progress.lastError,
+                                    stage = null,
+                                    errorMessage = null,
+                                )
+                            }
+
                         is AssessmentProgress.InProgress ->
-                            _uiState.update { it.copy(stage = progress.stage, errorMessage = null) }
+                            _uiState.update {
+                                it.copy(isQueued = false, stage = progress.stage, errorMessage = null)
+                            }
 
                         is AssessmentProgress.Completed -> {
                             val existing = getFeedback(progress.assessment.id)
                             _uiState.update {
                                 it.copy(
+                                    isQueued = false,
                                     stage = null,
                                     assessment = progress.assessment,
                                     decision = existing?.decision,
@@ -52,7 +82,9 @@ class AssessmentViewModel(
                         }
 
                         is AssessmentProgress.Failed ->
-                            _uiState.update { it.copy(stage = null, errorMessage = progress.reason) }
+                            _uiState.update {
+                                it.copy(isQueued = false, stage = null, errorMessage = progress.reason)
+                            }
                     }
                 }
         }

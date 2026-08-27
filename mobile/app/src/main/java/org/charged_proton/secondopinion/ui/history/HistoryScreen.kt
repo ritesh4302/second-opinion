@@ -128,7 +128,9 @@ private fun DeleteCaseDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
 
 private fun CaseStatus.toStringRes(): Int = when (this) {
     CaseStatus.RECORDED -> R.string.case_status_recorded
+    CaseStatus.QUEUED -> R.string.case_status_queued
     CaseStatus.UPLOADING -> R.string.case_status_uploading
+    CaseStatus.RETRYING -> R.string.case_status_retrying
     CaseStatus.PROCESSING -> R.string.case_status_processing
     CaseStatus.COMPLETED -> R.string.case_status_completed
     CaseStatus.FAILED -> R.string.case_status_failed

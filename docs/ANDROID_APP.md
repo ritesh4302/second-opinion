@@ -97,6 +97,7 @@ mobile/
 │       ├── auth/FirebaseAuthClient.kt  # Credential Manager → Firebase Auth adapter
 │       ├── auth/CurrentActivityTracker.kt  # resumed-Activity provider for Credential Manager
 │       ├── di/AppModule.kt             # Koin module: recorder, repos, use cases, ViewModels
+│       ├── queue/                       # WorkManager upload worker + scheduler
 │       └── ui/
 │           ├── navigation/AppNavHost.kt        # record / history / assessment/{caseId}
 │           ├── navigation/AuthGate.kt          # signed out → LoginScreen, signed in → AppNavHost
@@ -128,9 +129,10 @@ mobile/
     │   │   └── recorder/VadTrimmingAudioRecorder.kt
     │   └── src/commonMain/.../data/
     │       ├── auth/                   # AuthTokenStore port, FakeGoogleAuthClient (dev)
-    │       ├── local/                   # SQLDelight assessment/feedback persistence
+    │       ├── local/                   # SQLDelight case/result/upload-queue persistence
     │       ├── mock/MockAssessmentScenarios.kt  # canned assessments (kept for tests/demo)
     │       ├── platform/                # AudioFileReader + AudioFileDeleter (fun interface ports)
+    │       ├── queue/                   # scheduler port + background queue processor
     │       ├── remote/                 # BackendApi (Ktor + bearer token), DTOs + mappers
     │       └── repository/             # SqlDelightCaseRepository, BackendAssessmentRepository,
     │                                   #   in-memory/mock implementations (tests/demo only)
@@ -233,7 +235,7 @@ Pharmacist taps "Speak"
   → StartRecordingUseCase → AudioRecorder.start()   (actual: AudioRecord, 16 kHz mono PCM)
   → UiState(isRecording = true)
 Pharmacist taps "Stop"
-  → suspend AudioRecorder.stop()                    (VAD silence trim → AAC encode → .m4a in cache)
+  → suspend AudioRecorder.stop()                    (VAD trim → AAC → app-private recordings dir)
   → Recording(file, durationMs, createdAt, consentConfirmed)   (consent dialog outcome)
   → RecordingRepository.save(recording)             (SQLDelight metadata + file reference)
   → UiState(isRecording = false, lastRecording = ...)
@@ -250,14 +252,16 @@ Recording saved (Stop)
       (case id is a client-generated UUID — doubles as the backend recording id)
   → UiState.lastCaseId set → "Get assessment" button → navigate assessment/{caseId}
 AssessmentViewModel(caseId) init
-  → RequestAssessmentUseCase → BackendAssessmentRepository.requestAssessment(caseId): Flow
+  → RequestAssessmentUseCase → QueuedAssessmentRepository.requestAssessment(caseId): Flow
+      ├─ Queued                  SQLDelight queue + unique network-constrained WorkManager job
       ├─ InProgress(UPLOADING)   POST /v1/recordings (multipart: id, duration_ms, locale, audio)
-      ├─ InProgress(...)         GET /v1/recordings/{id} polled every 2 s (≤ 15 min);
+      ├─ InProgress(...)         GET /v1/recordings/{id} polled every 2 s (≤ 8 min per attempt);
       │                            backend status → PipelineStage (diarizing→DIARIZING,
       │                            transcribing/translating→TRANSCRIBING, extracting→EXTRACTING,
       │                            assessing→ASSESSING); case status mirrors the progress
       └─ Completed(Assessment)   GET /v1/recordings/{id}/assessment → DTO → domain mapping
-         or Failed(reason)       pipeline failure stage / timeout / network error
+         or retry wait           transient failure → exponential backoff, at most five attempts
+         or Failed(reason)       permanent pipeline failure / exhausted retry budget
   → Assessment screen renders result ("Refer to a doctor" escalation banner first when red
       flags exist; guidance items with prescription=true carry a "Prescription drug" badge)
   → Pharmacist accepts / rejects / overrides → SubmitFeedbackUseCase
@@ -271,9 +275,10 @@ HistoryScreen
         (network failure keeps the case so erasure can be retried)
 ```
 
-`InMemoryCaseRepository` is still the case store (SQLDelight pending) — cases and cached
-assessments vanish on process death; the domain ports, use cases, ViewModels, and screens
-were unchanged by the backend integration.
+Cases, assessment results, feedback, and upload progress are owner-scoped in SQLDelight and
+survive process death. WorkManager resumes queued work after process/device restart; reopening a
+terminal failure and tapping Retry creates a fresh unique work request without duplicating the
+backend recording ID.
 
 ### 5.3 UiState contract (per screen)
 

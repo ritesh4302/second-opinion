@@ -99,6 +99,27 @@ class AssessmentViewModelTest {
     }
 
     @Test
+    fun queuedProgress_surfacesRetryMetadata() = runTest {
+        val vm = viewModel()
+
+        repository.progress.emit(AssessmentProgress.Queued(2, "connection refused"))
+
+        val state = vm.uiState.value
+        assertTrue(state.isQueued)
+        assertEquals(2, state.queueAttemptCount)
+        assertEquals("connection refused", state.lastQueueError)
+    }
+
+    @Test
+    fun onRetry_startsNewAssessmentRequest() = runTest {
+        val vm = viewModel("case-42")
+
+        vm.onRetry()
+
+        assertEquals(listOf("case-42", "case-42"), repository.requestedCaseIds)
+    }
+
+    @Test
     fun progressFlowThrows_surfacesErrorMessage() = runTest {
         repository.progressOverride = flow { throw IllegalStateException("pipeline crashed") }
 

@@ -13,7 +13,9 @@ data class SymptomCase(
 
 enum class CaseStatus {
     RECORDED,
+    QUEUED,
     UPLOADING,
+    RETRYING,
     PROCESSING,
     COMPLETED,
     FAILED,

@@ -1,6 +1,7 @@
 package org.charged_proton.secondopinion.data.repository
 
 import io.ktor.client.plugins.ClientRequestException
+import io.ktor.client.plugins.ResponseException
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -38,7 +39,7 @@ class BackendAssessmentRepository(
     private val assessmentStore: AssessmentStore,
     private val locale: String = "hi-IN",
     private val pollIntervalMillis: Long = 2_000,
-    private val maxPollMillis: Long = 15 * 60_000,
+    private val maxPollMillis: Long = 8 * 60_000,
 ) : AssessmentRepository {
 
     override fun requestAssessment(caseId: String): Flow<AssessmentProgress> = flow {
@@ -71,8 +72,17 @@ class BackendAssessmentRepository(
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (failure: Exception) {
-            caseRepository.updateStatus(caseId, CaseStatus.FAILED)
-            emit(AssessmentProgress.Failed(failure.message ?: "Could not reach the server"))
+            val retryable = failure.isRetryable()
+            caseRepository.updateStatus(
+                caseId,
+                if (retryable) CaseStatus.RETRYING else CaseStatus.FAILED,
+            )
+            emit(
+                AssessmentProgress.Failed(
+                    failure.message ?: "Could not reach the server",
+                    retryable = retryable,
+                ),
+            )
         }
     }
 
@@ -104,8 +114,13 @@ class BackendAssessmentRepository(
                 }
             }
             if (elapsedMillis >= maxPollMillis) {
-                caseRepository.updateStatus(caseId, CaseStatus.FAILED)
-                emit(AssessmentProgress.Failed("Timed out waiting for the assessment"))
+                caseRepository.updateStatus(caseId, CaseStatus.RETRYING)
+                emit(
+                    AssessmentProgress.Failed(
+                        "Timed out waiting for the assessment",
+                        retryable = true,
+                    ),
+                )
                 return
             }
             delay(pollIntervalMillis)
@@ -152,5 +167,12 @@ class BackendAssessmentRepository(
         }
         assessmentStore.deleteCase(caseId)
         caseRepository.deleteCase(caseId)
+    }
+
+    private fun Exception.isRetryable(): Boolean = when (this) {
+        is ResponseException -> response.status == HttpStatusCode.RequestTimeout ||
+            response.status == HttpStatusCode.TooManyRequests ||
+            response.status.value >= 500
+        else -> true
     }
 }

@@ -11,6 +11,8 @@ import org.charged_proton.secondopinion.data.auth.SharedPreferencesAuthTokenStor
 import org.charged_proton.secondopinion.data.local.AssessmentStore
 import org.charged_proton.secondopinion.data.local.AndroidDatabaseFactory
 import org.charged_proton.secondopinion.data.local.SqlDelightAssessmentStore
+import org.charged_proton.secondopinion.data.local.SqlDelightUploadQueueStore
+import org.charged_proton.secondopinion.data.local.UploadQueueStore
 import org.charged_proton.secondopinion.data.platform.AndroidAudioFileDeleter
 import org.charged_proton.secondopinion.data.platform.AndroidAudioFileReader
 import org.charged_proton.secondopinion.data.platform.AudioFileDeleter
@@ -18,7 +20,10 @@ import org.charged_proton.secondopinion.data.platform.AudioFileReader
 import org.charged_proton.secondopinion.data.player.MediaPlayerAudioPlayer
 import org.charged_proton.secondopinion.data.recorder.VadTrimmingAudioRecorder
 import org.charged_proton.secondopinion.data.remote.createBackendApi
+import org.charged_proton.secondopinion.data.queue.AssessmentWorkScheduler
+import org.charged_proton.secondopinion.data.queue.UploadQueueProcessor
 import org.charged_proton.secondopinion.data.repository.BackendAssessmentRepository
+import org.charged_proton.secondopinion.data.repository.QueuedAssessmentRepository
 import org.charged_proton.secondopinion.data.repository.SqlDelightCaseRepository
 import org.charged_proton.secondopinion.domain.auth.AuthClient
 import org.charged_proton.secondopinion.domain.auth.AuthState
@@ -49,6 +54,7 @@ import org.charged_proton.secondopinion.presentation.auth.AuthViewModel
 import org.charged_proton.secondopinion.presentation.history.HistoryViewModel
 import org.charged_proton.secondopinion.presentation.login.LoginViewModel
 import org.charged_proton.secondopinion.presentation.symptom.SymptomViewModel
+import org.charged_proton.secondopinion.queue.WorkManagerAssessmentScheduler
 import org.koin.android.ext.koin.androidContext
 import org.koin.core.module.dsl.viewModel
 import org.koin.dsl.module
@@ -68,6 +74,12 @@ val appModule = module {
     single<AssessmentStore> {
         val authClient = get<AuthClient>()
         SqlDelightAssessmentStore(get()) {
+            (authClient.authState.value as? AuthState.SignedIn)?.user?.uid
+        }
+    }
+    single<UploadQueueStore> {
+        val authClient = get<AuthClient>()
+        SqlDelightUploadQueueStore(get()) {
             (authClient.authState.value as? AuthState.SignedIn)?.user?.uid
         }
     }
@@ -94,7 +106,12 @@ val appModule = module {
             onUnauthorized = { authClient.signOut() },
         )
     }
-    single<AssessmentRepository> { BackendAssessmentRepository(get(), get(), get(), get(), get()) }
+    single<AssessmentWorkScheduler> { WorkManagerAssessmentScheduler(androidContext()) }
+    single { BackendAssessmentRepository(get(), get(), get(), get(), get()) }
+    single { UploadQueueProcessor(get<BackendAssessmentRepository>(), get(), get()) }
+    single<AssessmentRepository> {
+        QueuedAssessmentRepository(get<BackendAssessmentRepository>(), get(), get(), get(), get())
+    }
 
     // Use cases
     factory { ObserveAuthStateUseCase(get()) }

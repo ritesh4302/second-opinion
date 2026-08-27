@@ -72,7 +72,8 @@ class VadTrimmingAudioRecorder(
         return withContext(Dispatchers.Default) {
             val samples = drain(active)
             val trimmed = trim(samples)
-            val file = File(context.cacheDir, "symptom_recording_${System.currentTimeMillis()}.m4a")
+            val recordingsDir = File(context.filesDir, "recordings").apply { mkdirs() }
+            val file = File(recordingsDir, "symptom_recording_${System.currentTimeMillis()}.m4a")
             AacM4aEncoder.encode(trimmed, SAMPLE_RATE, file)
             Recording(
                 filePath = file.absolutePath,

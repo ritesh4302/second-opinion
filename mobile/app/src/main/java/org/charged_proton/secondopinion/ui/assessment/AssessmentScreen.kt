@@ -48,6 +48,21 @@ fun AssessmentScreen(
             .verticalScroll(rememberScrollState())
             .padding(24.dp),
     ) {
+        if (uiState.isQueued) {
+            Text(
+                text = if (uiState.queueAttemptCount > 0) {
+                    stringResource(R.string.assessment_retry_wait, uiState.queueAttemptCount)
+                } else {
+                    stringResource(R.string.assessment_queued)
+                },
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            uiState.lastQueueError?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+
         uiState.stage?.let { stage ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 CircularProgressIndicator(modifier = Modifier.width(24.dp).height(24.dp))
@@ -65,6 +80,10 @@ fun AssessmentScreen(
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.error,
             )
+            Spacer(modifier = Modifier.height(12.dp))
+            OutlinedButton(onClick = viewModel::onRetry) {
+                Text(stringResource(R.string.retry_assessment))
+            }
         }
 
         uiState.assessment?.let { assessment ->

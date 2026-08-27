@@ -27,8 +27,10 @@
 - [x] **Persist assessment and feedback results in SQLDelight** — owner-scoped assessment JSON
   and pharmacist decisions now survive process death through `SqlDelightAssessmentStore`; the
   v1→v2 migration and host tests cover restoration, deletion, and account isolation.
-- [ ] **Implement the offline upload queue** — persist queued/retry state and move pending audio
-  from evictable cache storage before adding network-constrained WorkManager execution.
+- [x] **Implement the offline upload queue** — SQLDelight persists owner-scoped queue state,
+  WorkManager runs unique network-constrained uploads with five bounded exponential-backoff
+  attempts, the assessment UI supports manual retry, and new audio is stored under app-private
+  durable storage instead of the evictable cache.
 - [ ] **"Forgot password" UX** — Firebase `sendPasswordResetEmail` flow from the login screen
   (plus consider email verification on sign-up).
 - [ ] **Legal disclaimers** — explicit in-app terms/liability framing (Q6): pharmacist is the

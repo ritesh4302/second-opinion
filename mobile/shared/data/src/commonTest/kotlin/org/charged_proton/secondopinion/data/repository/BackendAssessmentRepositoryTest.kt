@@ -169,7 +169,8 @@ class BackendAssessmentRepositoryTest {
 
         val failed = assertIs<AssessmentProgress.Failed>(emissions.last())
         assertEquals("Timed out waiting for the assessment", failed.reason)
-        assertEquals(CaseStatus.FAILED, caseRepository.getCase(caseId)?.status)
+        assertTrue(failed.retryable)
+        assertEquals(CaseStatus.RETRYING, caseRepository.getCase(caseId)?.status)
     }
 
     @Test
@@ -181,7 +182,8 @@ class BackendAssessmentRepositoryTest {
 
         val failed = assertIs<AssessmentProgress.Failed>(emissions.last())
         assertEquals("connection refused", failed.reason)
-        assertEquals(CaseStatus.FAILED, caseRepository.getCase(caseId)?.status)
+        assertTrue(failed.retryable)
+        assertEquals(CaseStatus.RETRYING, caseRepository.getCase(caseId)?.status)
     }
 
     @Test
