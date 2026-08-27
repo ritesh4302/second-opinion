@@ -7,6 +7,7 @@ import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
+import androidx.credentials.exceptions.NoCredentialException
 import com.google.android.gms.tasks.Task
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
@@ -90,6 +91,8 @@ class FirebaseAuthClient(
             Result.success(firebaseUser.toAuthUser())
         } catch (e: GetCredentialCancellationException) {
             Result.failure(SignInCancelledException())
+        } catch (e: NoCredentialException) {
+            Result.failure(IllegalStateException("No Google credential is available", e))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

@@ -10,3 +10,10 @@
 #-keepclassmembers class fqcn.of.javascript.interface.for.webview {
 #   public *;
 #}
+
+# sherpa-onnx v1.13.4 publishes an empty consumer rule file. Its JNI bridge resolves
+# Java class and native method names from libsherpa-onnx-jni.so, so keep only those
+# name-sensitive members rather than the entire library API.
+-keepclasseswithmembernames,includedescriptorclasses class com.k2fsa.sherpa.onnx.** {
+    native <methods>;
+}

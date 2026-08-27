@@ -50,9 +50,9 @@
   `mobile/app/build.gradle.kts` (credentials via `local.properties`/env, never committed), and
   register the release SHA-1/SHA-256 in the Firebase console (re-download
   `google-services.json` afterwards).
-- [ ] **R8/ProGuard verification** — release build currently has `optimization { enable = false }`;
-  enable R8 and verify keep rules for Firebase Auth, Ktor/kotlinx-serialization, and the
-  sherpa-onnx JNI bindings.
+- [x] **R8/ProGuard verification** — release optimization/resource shrinking is enabled; Firebase,
+  Ktor, and kotlinx-serialization consumer rules resolve cleanly, a narrow sherpa-onnx JNI rule
+  preserves native names, all four ABI libraries remain packaged, and R8 emits no missing rules.
 - [ ] **Tunnel-based `BACKEND_BASE_URL`** — the debug URL `http://127.0.0.1:8000` only works via
   `adb reverse`; add a build-time override (Gradle property or flavor) pointing at an HTTPS
   tunnel (ngrok/cloudflared) so off-network devices and release builds (no cleartext

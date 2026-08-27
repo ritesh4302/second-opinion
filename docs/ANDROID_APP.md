@@ -47,7 +47,7 @@ local audio cleanup); cases still in-memory (SQLDelight pending)
 | Local storage | SQLDelight | Multiplatform DB for recordings/metadata queue |
 | Audio capture | `AudioRecord` + Silero VAD (sherpa-onnx) + `MediaCodec` | 16 kHz mono PCM → silence trim → AAC/M4A |
 | Min/target SDK | 29 / 37 | Android 10+ |
-| Build | Gradle (Kotlin DSL) + version catalog (`gradle/libs.versions.toml`) | |
+| Build | Gradle (Kotlin DSL) + version catalog (`gradle/libs.versions.toml`) | Release builds use R8 optimization/resource shrinking and a narrow sherpa-onnx JNI keep rule |
 
 > SQLDelight is **planned** — add it via the version catalog when persistence is implemented,
 > not before. Ktor + kotlinx.serialization landed with the backend integration.
@@ -391,7 +391,16 @@ cd mobile
 ./gradlew check                       # all unit tests (shared modules run as host tests)
 ./gradlew :shared:domain:testAndroidHostTest  # single shared module's tests
 ./gradlew :app:connectedDebugAndroidTest  # instrumented + Compose UI tests (device required)
+./gradlew :app:assembleRelease        # optimized unsigned APK (signing remains required)
+./gradlew :app:bundleRelease          # optimized unsigned Play bundle
 ```
+
+**Release shrinker verification:** R8 produces mapping, usage, seeds, configuration, and resource
+reports without a `missing_rules.txt` file. Firebase Auth, Ktor, and kotlinx-serialization provide
+consumer rules or direct generated serializer references. Sherpa-onnx v1.13.4 ships an empty
+consumer rule file, so `app/src/main/keepRules/rules.keep` preserves only JNI-sensitive native
+member names. The verified release APK retains sherpa/ONNX native libraries for arm64-v8a,
+armeabi-v7a, x86, and x86_64; Play App Bundle delivery splits these by device ABI.
 
 - SDK location: `mobile/local.properties` (`sdk.dir`). Known AVD: `Pixel_10_Pro`.
 - Launch after install:
