@@ -7,6 +7,11 @@ on:
   pull_request:
     paths: ["backend/**", ".github/workflows/backend.yml"]
 
+env:
+  GCP_PROJECT: pharmacy-opinion-3
+  GCP_REGION: asia-south1
+  IMAGE: asia-south1-docker.pkg.dev/pharmacy-opinion-3/backend/backend
+
 defaults:
   run:
     working-directory: backend
@@ -41,3 +46,97 @@ jobs:
 
       - name: Build image
         run: docker build -t second-opinion-backend:ci .
+
+  deploy:
+    needs: [lint-test, docker-build]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Required for keyless (Workload Identity Federation) authentication.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: pharmacy-opinion-3
+          workload_identity_provider: projects/352579493765/locations/global/workloadIdentityPools/github/providers/github-oidc
+          service_account: github-backend-deploy@pharmacy-opinion-3.iam.gserviceaccount.com
+
+      - name: Set up gcloud CLI
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Build and push image
+        run: |
+          gcloud auth configure-docker "$GCP_REGION-docker.pkg.dev" --quiet
+          docker build -t "$IMAGE:$GITHUB_SHA" -t "$IMAGE:latest" .
+          docker push --all-tags "$IMAGE"
+
+      # Memorystore has no static hostname; resolve the private IP at deploy
+      # time so instance recreation never requires a workflow change.
+      - name: Resolve Redis host
+        run: |
+          REDIS_HOST=$(gcloud redis instances describe so-redis \
+            --region "$GCP_REGION" --project "$GCP_PROJECT" \
+            --format "value(host)")
+          echo "SO_REDIS_URL=redis://$REDIS_HOST:6379/0" >> "$GITHUB_ENV"
+
+      # Alembic runs as a Cloud Run job before the new revision serves
+      # traffic; the DB URL secret carries the Cloud SQL private IP.
+      - name: Run database migrations
+        run: |
+          gcloud run jobs deploy so-migrate \
+            --project "$GCP_PROJECT" \
+            --region "$GCP_REGION" \
+            --image "$IMAGE:$GITHUB_SHA" \
+            --service-account so-backend@pharmacy-opinion-3.iam.gserviceaccount.com \
+            --network default --subnet default --vpc-egress private-ranges-only \
+            --set-secrets "SO_DATABASE_URL=so-database-url:latest" \
+            --command uv \
+            --args "run,--no-dev,alembic,upgrade,head" \
+            --max-retries 0 \
+            --task-timeout 10m
+          gcloud run jobs execute so-migrate \
+            --project "$GCP_PROJECT" --region "$GCP_REGION" --wait
+
+      - name: Deploy API (Cloud Run service)
+        run: |
+          gcloud run deploy so-api \
+            --project "$GCP_PROJECT" \
+            --region "$GCP_REGION" \
+            --image "$IMAGE:$GITHUB_SHA" \
+            --service-account so-backend@pharmacy-opinion-3.iam.gserviceaccount.com \
+            --network default --subnet default --vpc-egress private-ranges-only \
+            --port 8000 \
+            --allow-unauthenticated \
+            --min-instances 0 --max-instances 2 \
+            --memory 512Mi \
+            --set-secrets "SO_DATABASE_URL=so-database-url:latest,SO_S3_ACCESS_KEY=so-s3-access-key:latest,SO_S3_SECRET_KEY=so-s3-secret-key:latest" \
+            --set-env-vars "SO_REDIS_URL=$SO_REDIS_URL,SO_S3_ENDPOINT_URL=https://storage.googleapis.com,SO_S3_BUCKET=pharmacy-opinion-3-recordings,SO_AUTH_PROVIDER=firebase,SO_FIREBASE_PROJECT_ID=$GCP_PROJECT"
+
+      # Celery pulls from Redis (no HTTP), so it runs as a worker pool with
+      # exactly one always-on instance (embedded beat needs a single worker).
+      - name: Deploy worker (Cloud Run worker pool)
+        run: |
+          gcloud run worker-pools deploy so-worker \
+            --project "$GCP_PROJECT" \
+            --region "$GCP_REGION" \
+            --image "$IMAGE:$GITHUB_SHA" \
+            --service-account so-backend@pharmacy-opinion-3.iam.gserviceaccount.com \
+            --network default --subnet default --vpc-egress private-ranges-only \
+            --instances 1 \
+            --memory 1Gi \
+            --set-secrets "SO_DATABASE_URL=so-database-url:latest,SO_S3_ACCESS_KEY=so-s3-access-key:latest,SO_S3_SECRET_KEY=so-s3-secret-key:latest,SO_SARVAM_API_KEY=so-sarvam-api-key:latest" \
+            --set-env-vars "SO_REDIS_URL=$SO_REDIS_URL,SO_S3_ENDPOINT_URL=https://storage.googleapis.com,SO_S3_BUCKET=pharmacy-opinion-3-recordings,SO_SPEECH_PROVIDER=sarvam,SO_NLP_PROVIDER=sarvam,SO_ASSESSMENT_PROVIDER=sarvam" \
+            --command uv \
+            --args "run,--no-dev,celery,-A,worker.main,worker,--beat,--loglevel=info"
+
+      - name: Smoke test
+        run: |
+          API_URL=$(gcloud run services describe so-api \
+            --project "$GCP_PROJECT" --region "$GCP_REGION" \
+            --format "value(status.url)")
+          curl --fail --silent --show-error --retry 5 --retry-delay 5 \
+            "$API_URL/readyz"

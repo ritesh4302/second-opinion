@@ -81,3 +81,6 @@ lint/tmp/
 
 # macOS
 .DS_Store
+
+# Local GCP setup scratch (scripts + command output; may contain credentials)
+.gcp/
