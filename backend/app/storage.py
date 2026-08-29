@@ -33,7 +33,14 @@ class S3ObjectStorage:
             endpoint_url=settings.s3_endpoint_url,
             aws_access_key_id=settings.s3_access_key,
             aws_secret_access_key=settings.s3_secret_key,
-            config=Config(signature_version="s3v4"),
+            # boto3 >= 1.36 sends CRC32 request checksums by default, which
+            # GCS's S3-interop endpoint rejects (SignatureDoesNotMatch), so
+            # compute them only when an operation requires one.
+            config=Config(
+                signature_version="s3v4",
+                request_checksum_calculation="when_required",
+                response_checksum_validation="when_required",
+            ),
         )
 
     def ensure_bucket(self) -> None:
