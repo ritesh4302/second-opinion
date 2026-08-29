@@ -3,6 +3,7 @@ name: mobile
 on:
   push:
     branches: [main]
+    tags: ["v*"]
     paths: ["mobile/**", ".github/workflows/mobile.yml"]
   pull_request:
     paths: ["mobile/**", ".github/workflows/mobile.yml"]
@@ -49,11 +50,9 @@ jobs:
 
   firebase-test-lab:
     needs: build
-    # Secrets are unavailable to PRs from forks; run FTL only for pushes and
-    # same-repo pull requests.
-    if: >-
-      github.event_name == 'push' ||
-      github.event.pull_request.head.repo.full_name == github.repository
+    # Test Lab device time is quota-limited, so run it only for release tags;
+    # branch pushes and PRs get build verification from the job above.
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     permissions:
       contents: read
