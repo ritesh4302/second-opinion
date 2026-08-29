@@ -139,7 +139,9 @@ class SarvamAssessor:
 
     def assess(self, case: CaseSummary) -> AssessmentResult:
         # Sarvam chat models are reasoning models: keep effort low and leave
-        # headroom, or the token budget is spent before `content` is emitted.
+        # generous headroom — reasoning tokens count against max_tokens, and
+        # realistic transcripts have been observed to use >6k tokens before
+        # `content` finishes (a truncated reply is unparseable JSON).
         response = self._client.chat.completions(
             model=self.model_id,
             messages=[
@@ -147,7 +149,7 @@ class SarvamAssessor:
                 {"role": "user", "content": _case_prompt(case)},
             ],
             temperature=0.2,
-            max_tokens=4096,
+            max_tokens=16384,
             reasoning_effort="low",
         )
         data = parse_llm_json(response.choices[0].message.content or "")
