@@ -10,6 +10,8 @@ on:
 
 env:
   FIREBASE_PROJECT_ID: pharmacy-opinion-3
+  # Android app ID for org.pharmacy.secondopinion (mobile/app/google-services.json)
+  FIREBASE_APP_ID: 1:352579493765:android:abb89faa3ac520fb226eec
   # CI-owned results bucket; the Google-managed default test-lab-* bucket
   # rejects service-account uploads (storage.objects.create 403).
   FTL_RESULTS_BUCKET: pharmacy-opinion-3-ftl-results
@@ -96,3 +98,43 @@ jobs:
             --app apks/debug/app-debug.apk \
             --device model=panther,version=33,locale=en,orientation=portrait \
             --timeout 10m
+
+  distribute:
+    needs: build
+    # Ship every mobile/ change that lands on main to the tester group;
+    # PRs get build verification only and tags additionally run Test Lab.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Required for keyless (Workload Identity Federation) authentication.
+      id-token: write
+    steps:
+      - name: Download APKs
+        uses: actions/download-artifact@v4
+        with:
+          name: apks
+          path: apks
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: pharmacy-opinion-3
+          workload_identity_provider: projects/352579493765/locations/global/workloadIdentityPools/github/providers/github-oidc
+          service_account: github-ftl-ci@pharmacy-opinion-3.iam.gserviceaccount.com
+
+      # The Firebase CLI picks up the WIF credentials exported by the auth
+      # step via GOOGLE_APPLICATION_CREDENTIALS; no JSON key is involved.
+      - name: Distribute debug APK via Firebase App Distribution
+        env:
+          RELEASE_NOTES: |
+            ${{ github.event.head_commit.message }}
+
+            Commit: ${{ github.sha }}
+        run: |
+          npx --yes firebase-tools@14 appdistribution:distribute \
+            apks/debug/app-debug.apk \
+            --project "$FIREBASE_PROJECT_ID" \
+            --app "$FIREBASE_APP_ID" \
+            --groups internal-testers \
+            --release-notes "$RELEASE_NOTES"
