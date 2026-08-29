@@ -6,6 +6,8 @@ on:
     paths: ["backend/**", ".github/workflows/backend.yml"]
   pull_request:
     paths: ["backend/**", ".github/workflows/backend.yml"]
+  # Manual redeploys (e.g. after IAM/infra fixes) without a code change.
+  workflow_dispatch:
 
 env:
   GCP_PROJECT: pharmacy-opinion-3
@@ -49,7 +51,7 @@ jobs:
 
   deploy:
     needs: [lint-test, docker-build]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
