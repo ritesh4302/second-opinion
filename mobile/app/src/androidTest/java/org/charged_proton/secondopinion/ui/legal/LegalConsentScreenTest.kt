@@ -6,6 +6,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.charged_proton.secondopinion.R
 import org.charged_proton.secondopinion.ui.theme.SecondOpinionTheme
@@ -28,9 +29,16 @@ class LegalConsentScreenTest {
             }
         }
 
-        composeRule.onNodeWithText(string(R.string.legal_accept_continue)).assertIsNotEnabled()
-        composeRule.onNodeWithText(string(R.string.legal_acknowledgement)).performClick()
+        // performScrollTo: the consent content overflows small screens and
+        // Compose test clicks do not auto-scroll to offscreen nodes.
         composeRule.onNodeWithText(string(R.string.legal_accept_continue))
+            .performScrollTo()
+            .assertIsNotEnabled()
+        composeRule.onNodeWithText(string(R.string.legal_acknowledgement))
+            .performScrollTo()
+            .performClick()
+        composeRule.onNodeWithText(string(R.string.legal_accept_continue))
+            .performScrollTo()
             .assertIsEnabled()
             .performClick()
 
@@ -43,7 +51,9 @@ class LegalConsentScreenTest {
             SecondOpinionTheme { LegalConsentScreen(false, false, onAccept = {}) }
         }
 
-        composeRule.onNodeWithText(string(R.string.legal_terms_title)).performClick()
+        composeRule.onNodeWithText(string(R.string.legal_terms_title))
+            .performScrollTo()
+            .performClick()
         composeRule.onNodeWithText(string(R.string.legal_terms_body)).assertIsDisplayed()
     }
 
