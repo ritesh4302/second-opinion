@@ -52,9 +52,7 @@ def make_recording(session, *, status=RecordingStatus.QUEUED) -> Recording:
     return recording
 
 
-def test_transient_failure_schedules_sanitized_retry(
-    sync_session_factory, monkeypatch
-):
+def test_transient_failure_schedules_sanitized_retry(sync_session_factory, monkeypatch):
     with sync_session_factory() as session:
         recording = make_recording(session)
         recording_id = str(recording.id)
@@ -101,9 +99,7 @@ def test_permanent_failure_routes_to_dlq(sync_session_factory):
         lambda *args: dead_letters.append(args),
     )
 
-    assert dead_letters == [
-        (recording_id, "extracting", "PermanentPipelineError", task.name)
-    ]
+    assert dead_letters == [(recording_id, "extracting", "PermanentPipelineError", task.name)]
     with sync_session_factory() as session:
         persisted = session.get(Recording, recording.id)
         assert persisted.status == RecordingStatus.DEAD_LETTERED
@@ -131,9 +127,7 @@ def test_exhausted_transient_failure_routes_to_dlq(sync_session_factory):
         assert session.get(Recording, recording.id).status == RecordingStatus.DEAD_LETTERED
 
 
-def test_replay_resets_metadata_and_enqueues_failed_stage(
-    sync_session_factory, monkeypatch
-):
+def test_replay_resets_metadata_and_enqueues_failed_stage(sync_session_factory, monkeypatch):
     from worker import main
 
     with sync_session_factory() as session:
@@ -145,9 +139,7 @@ def test_replay_resets_metadata_and_enqueues_failed_stage(
         recording_id = str(recording.id)
     sent: list[tuple] = []
     monkeypatch.setattr(main, "get_session_factory", lambda: sync_session_factory)
-    monkeypatch.setattr(
-        main.celery_app, "send_task", lambda name, args: sent.append((name, args))
-    )
+    monkeypatch.setattr(main.celery_app, "send_task", lambda name, args: sent.append((name, args)))
 
     assert main.replay_dead_letter.run(recording_id) is True
 

@@ -170,9 +170,7 @@ def _send_dead_letter(
 
 
 @celery_app.task(name=DEAD_LETTER_TASK)
-def dead_letter(
-    recording_id: str, stage: str, safe_error_type: str, source_task: str
-) -> None:
+def dead_letter(recording_id: str, stage: str, safe_error_type: str, source_task: str) -> None:
     """Inspection sink; runs only when an operator consumes the DLQ."""
     logger.warning(
         "dead letter inspected recording_id=%s stage=%s error_type=%s source_task=%s",
@@ -184,9 +182,7 @@ def dead_letter(
 
 
 @celery_app.task(bind=True, name=REPLAY_DEAD_LETTER_TASK, max_retries=5)
-def replay_dead_letter(
-    task: Task, recording_id: str, stage: str | None = None
-) -> bool:
+def replay_dead_letter(task: Task, recording_id: str, stage: str | None = None) -> bool:
     """Re-enqueue a failed stage after its root cause has been resolved."""
     if stage is None:
         with get_session_factory()() as session:

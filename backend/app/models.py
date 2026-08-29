@@ -82,9 +82,7 @@ class Recording(Base):
     failure_stage: Mapped[str | None] = mapped_column(String(20), default=None)
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
     last_error_type: Mapped[str | None] = mapped_column(String(100), default=None)
-    dead_lettered_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), default=None
-    )
+    dead_lettered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow

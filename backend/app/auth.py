@@ -25,8 +25,7 @@ from app.settings import get_settings
 # Firebase's securetoken signing keys. Same keys as the x509 endpoint
 # (robot/v1/metadata/x509/securetoken@...), served in JWKS form for PyJWKClient.
 FIREBASE_JWKS_URL = (
-    "https://www.googleapis.com/service_accounts/v1/jwk/"
-    "securetoken@system.gserviceaccount.com"
+    "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"
 )
 
 
@@ -68,9 +67,7 @@ class FirebaseTokenVerifier:
         uid = claims.get("sub")
         if not uid:
             raise InvalidToken("token has no subject claim")
-        return VerifiedIdentity(
-            uid=uid, email=claims.get("email"), display_name=claims.get("name")
-        )
+        return VerifiedIdentity(uid=uid, email=claims.get("email"), display_name=claims.get("name"))
 
 
 class FakeTokenVerifier:
