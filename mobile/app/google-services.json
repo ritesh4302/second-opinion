@@ -1,36 +1,26 @@
 {
   "project_info": {
-    "project_number": "890735966706",
-    "project_id": "pharmacy-opinion",
-    "storage_bucket": "pharmacy-opinion.firebasestorage.app"
+    "project_number": "352579493765",
+    "project_id": "pharmacy-opinion-3",
+    "storage_bucket": "pharmacy-opinion-3.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:890735966706:android:8e1e3fc56980d4666e536b",
+        "mobilesdk_app_id": "1:352579493765:android:abb89faa3ac520fb226eec",
         "android_client_info": {
           "package_name": "org.pharmacy.secondopinion"
         }
       },
-      "oauth_client": [
-        {
-          "client_id": "890735966706-in80fjurujl759gloma3l3bqssdqcsgo.apps.googleusercontent.com",
-          "client_type": 3
-        }
-      ],
+      "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyDPF-oYkRJY_4FWs3xNN3Uv5oB_lzSEWyk"
+          "current_key": "AIzaSyCBGBFOoHczb-UPPUcWs7jrKsv2mxbMcJ8"
         }
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": [
-            {
-              "client_id": "890735966706-in80fjurujl759gloma3l3bqssdqcsgo.apps.googleusercontent.com",
-              "client_type": 3
-            }
-          ]
+          "other_platform_oauth_client": []
         }
       }
     }
