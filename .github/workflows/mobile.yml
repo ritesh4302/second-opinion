@@ -37,8 +37,12 @@ jobs:
       - name: Set up Gradle (with build/dependency caching)
         uses: gradle/actions/setup-gradle@v4
 
+      # CI builds point at the production backend (Cloud Run) because the
+      # distributed APK runs on tester devices with no adb-reverse bridge.
       - name: Build debug APK and instrumentation test APK
-        run: ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest
+        run: >
+          ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest
+          -PbackendBaseUrl=https://so-api-7i4kw4366a-el.a.run.app
 
       - name: Upload APKs for the Test Lab job
         uses: actions/upload-artifact@v4

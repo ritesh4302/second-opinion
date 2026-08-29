@@ -413,11 +413,14 @@ armeabi-v7a, x86, and x86_64; Play App Bundle delivery splits these by device AB
 - Launch after install:
   `adb shell monkey -p org.charged_proton.secondopinion -c android.intent.category.LAUNCHER 1`
 
-**Talking to the dev backend:** debug builds point at `http://127.0.0.1:8000`
-(`BACKEND_BASE_URL` in `app/build.gradle.kts`). Bridge the device/emulator to the
-docker-compose stack with `adb reverse tcp:8000 tcp:8000` after boot. Loopback + reverse is
-used instead of the classic `10.0.2.2` host alias because the current emulator's WiFi stack
-does not route app traffic through it reliably (shell traffic works, app sockets time out).
+**Talking to the dev backend:** local debug builds point at `http://127.0.0.1:8000`
+(`BACKEND_BASE_URL` in `app/build.gradle.kts`, overridable via `-PbackendBaseUrl=...`).
+Bridge the device/emulator to the docker-compose stack with `adb reverse tcp:8000 tcp:8000`
+after boot. Loopback + reverse is used instead of the classic `10.0.2.2` host alias because
+the current emulator's WiFi stack does not route app traffic through it reliably (shell
+traffic works, app sockets time out). CI builds (`.github/workflows/mobile.yml`) pass the
+production Cloud Run URL (`https://so-api-7i4kw4366a-el.a.run.app`) so App Distribution
+testers reach the deployed backend directly.
 
 **Testing strategy (implemented):** each shared module owns its tests in `commonTest`
 (96 tests total, run on the JVM via the AGP-KMP `withHostTest {}` DSL):

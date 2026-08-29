@@ -25,10 +25,14 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // Docker-compose dev stack via `adb reverse tcp:8000 tcp:8000` (BACKEND.md §7).
-        // Loopback is used instead of 10.0.2.2 because the emulator's WiFi stack
-        // does not route app traffic through the legacy host alias reliably.
-        buildConfigField("String", "BACKEND_BASE_URL", "\"http://127.0.0.1:8000\"")
+        // Default: docker-compose dev stack via `adb reverse tcp:8000 tcp:8000`
+        // (BACKEND.md §7). Loopback is used instead of 10.0.2.2 because the
+        // emulator's WiFi stack does not route app traffic through the legacy
+        // host alias reliably. CI overrides this with the Cloud Run URL
+        // (-PbackendBaseUrl=...) so App Distribution builds reach production.
+        val backendBaseUrl = providers.gradleProperty("backendBaseUrl")
+            .getOrElse("http://127.0.0.1:8000")
+        buildConfigField("String", "BACKEND_BASE_URL", "\"$backendBaseUrl\"")
     }
 
     buildTypes {
