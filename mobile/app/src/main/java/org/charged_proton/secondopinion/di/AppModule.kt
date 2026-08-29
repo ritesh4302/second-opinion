@@ -63,11 +63,12 @@ import org.charged_proton.secondopinion.presentation.login.LoginViewModel
 import org.charged_proton.secondopinion.presentation.legal.LegalConsentViewModel
 import org.charged_proton.secondopinion.presentation.symptom.SymptomViewModel
 import org.charged_proton.secondopinion.queue.WorkManagerAssessmentScheduler
+import org.charged_proton.secondopinion.telemetry.AppTelemetry
 import org.koin.android.ext.koin.androidContext
 import org.koin.core.module.dsl.viewModel
 import org.koin.dsl.module
 
-val appModule = module {
+fun appModule(telemetry: AppTelemetry) = module {
     // Platform + persistent local data
     single { SileroVadTrimmer(androidContext().assets) }
     single<AudioRecorder> { VadTrimmingAudioRecorder(androidContext(), get()) }
@@ -95,6 +96,7 @@ val appModule = module {
     single<AudioFileDeleter> { AndroidAudioFileDeleter() }
     single<AuthTokenStore> { SharedPreferencesAuthTokenStore(androidContext()) }
     single<LegalAcceptanceStore> { SharedPreferencesLegalAcceptanceStore(androidContext()) }
+    single { telemetry }
     single<LegalConsentRepository> {
         PersistentLegalConsentRepository(get(), System::currentTimeMillis)
     }

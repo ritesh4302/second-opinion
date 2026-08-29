@@ -1,11 +1,14 @@
 package org.charged_proton.secondopinion.ui.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.charged_proton.secondopinion.domain.auth.AuthState
 import org.charged_proton.secondopinion.presentation.auth.AuthViewModel
+import org.charged_proton.secondopinion.telemetry.AppTelemetry
+import org.charged_proton.secondopinion.telemetry.NoOpAppTelemetry
 import org.charged_proton.secondopinion.ui.login.LoginScreen
 import org.koin.androidx.compose.koinViewModel
 
@@ -18,8 +21,12 @@ import org.koin.androidx.compose.koinViewModel
 fun AuthGate(
     modifier: Modifier = Modifier,
     viewModel: AuthViewModel = koinViewModel(),
+    telemetry: AppTelemetry = NoOpAppTelemetry,
 ) {
     val authState by viewModel.authState.collectAsStateWithLifecycle()
+    LaunchedEffect(authState) {
+        if (authState !is AuthState.SignedIn) telemetry.setCollectionEnabled(false)
+    }
 
     when (authState) {
         AuthState.Unknown -> Unit // blank frame while the session restores
@@ -27,8 +34,9 @@ fun AuthGate(
         is AuthState.SignedIn -> LegalGate(
             userId = (authState as AuthState.SignedIn).user.uid,
             modifier = modifier,
+            telemetry = telemetry,
         ) {
-            AppNavHost(modifier = modifier)
+            AppNavHost(modifier = modifier, telemetry = telemetry)
         }
     }
 }

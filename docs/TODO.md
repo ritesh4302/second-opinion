@@ -40,11 +40,18 @@
 - [x] **Legal disclaimers and terms UX** — signed-in users must explicitly accept the current
   version of the Terms and Privacy Notice; acceptance is timestamped per pharmacist. Login and
   authenticated screens retain document links, and CDS responsibility is always visible.
+- [x] **Privacy-gated Firebase telemetry** — Analytics and Crashlytics default off, legal acceptance
+  enables a fixed PHI-free event schema, sign-out disables collection, and fatal/non-fatal
+  exception messages and causes are sanitized before reporting.
 - [ ] **Professional legal review** — qualified Indian healthcare/privacy counsel must finalize
   the draft Terms, DPDP notice, consent wording, retention policy, grievance contact, processor
   contracts, and pharmacist-liability framing before any real-patient pilot.
 
 ## Real Device Hardening
+
+- [x] **Cloud free-tier analysis** — `docs/CLOUD_DEPLOYMENT_ANALYSIS.md` compares Fly.io, Render,
+  Railway, and GCP compute, storage, and secrets. No ongoing free tier safely fits the full stack;
+  GCP paid managed services are recommended for a real-patient pilot.
 
 - [ ] **Release signing** — create a release keystore, add a `signingConfigs.release` block to
   `mobile/app/build.gradle.kts` (credentials via `local.properties`/env, never committed), and

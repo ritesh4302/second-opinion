@@ -10,8 +10,12 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.ui.Modifier
 import org.charged_proton.secondopinion.ui.navigation.AuthGate
 import org.charged_proton.secondopinion.ui.theme.SecondOpinionTheme
+import org.charged_proton.secondopinion.telemetry.AppTelemetry
+import org.koin.android.ext.android.inject
 
 class MainActivity : ComponentActivity() {
+    private val telemetry: AppTelemetry by inject()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -19,7 +23,8 @@ class MainActivity : ComponentActivity() {
             SecondOpinionTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     AuthGate(
-                        modifier = Modifier.padding(innerPadding)
+                        modifier = Modifier.padding(innerPadding),
+                        telemetry = telemetry,
                     )
                 }
             }

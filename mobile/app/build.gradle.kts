@@ -1,11 +1,13 @@
 plugins {
     alias(libs.plugins.android.application)
+    alias(libs.plugins.firebase.crashlytics) apply false
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.google.services) apply false
 }
 
 if (file("google-services.json").exists()) {
     apply(plugin = libs.plugins.google.services.get().pluginId)
+    apply(plugin = libs.plugins.firebase.crashlytics.get().pluginId)
 }
 
 android {
@@ -62,7 +64,9 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.work.runtime)
     implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.analytics)
     implementation(libs.firebase.auth)
+    implementation(libs.firebase.crashlytics)
     implementation(libs.androidx.credentials)
     implementation(libs.androidx.credentials.play.services.auth)
     implementation(libs.googleid)

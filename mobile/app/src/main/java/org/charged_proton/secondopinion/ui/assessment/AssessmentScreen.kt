@@ -30,6 +30,9 @@ import org.charged_proton.secondopinion.R
 import org.charged_proton.secondopinion.domain.model.PharmacistDecision
 import org.charged_proton.secondopinion.domain.model.RedFlag
 import org.charged_proton.secondopinion.presentation.assessment.AssessmentViewModel
+import org.charged_proton.secondopinion.telemetry.AppTelemetry
+import org.charged_proton.secondopinion.telemetry.NoOpAppTelemetry
+import org.charged_proton.secondopinion.telemetry.TelemetryEvent
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
 
@@ -39,6 +42,7 @@ fun AssessmentScreen(
     caseId: String,
     modifier: Modifier = Modifier,
     viewModel: AssessmentViewModel = koinViewModel { parametersOf(caseId) },
+    telemetry: AppTelemetry = NoOpAppTelemetry,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -81,7 +85,10 @@ fun AssessmentScreen(
                 color = MaterialTheme.colorScheme.error,
             )
             Spacer(modifier = Modifier.height(12.dp))
-            OutlinedButton(onClick = viewModel::onRetry) {
+            OutlinedButton(onClick = {
+                telemetry.event(TelemetryEvent.ASSESSMENT_RETRIED)
+                viewModel.onRetry()
+            }) {
                 Text(stringResource(R.string.retry_assessment))
             }
         }
@@ -151,10 +158,19 @@ fun AssessmentScreen(
             DecisionBar(
                 decision = uiState.decision,
                 isSubmitting = uiState.isSubmittingDecision,
-                onDecision = viewModel::onDecision,
+                onDecision = { decision ->
+                    telemetry.event(decision.toTelemetryEvent())
+                    viewModel.onDecision(decision)
+                },
             )
         }
     }
+}
+
+private fun PharmacistDecision.toTelemetryEvent(): TelemetryEvent = when (this) {
+    PharmacistDecision.ACCEPTED -> TelemetryEvent.DECISION_ACCEPTED
+    PharmacistDecision.REJECTED -> TelemetryEvent.DECISION_REJECTED
+    PharmacistDecision.OVERRIDDEN -> TelemetryEvent.DECISION_OVERRIDDEN
 }
 
 @Composable

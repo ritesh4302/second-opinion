@@ -33,6 +33,9 @@ import org.charged_proton.secondopinion.domain.auth.AuthState
 import org.charged_proton.secondopinion.presentation.auth.AuthViewModel
 import org.charged_proton.secondopinion.presentation.symptom.SymptomStatus
 import org.charged_proton.secondopinion.presentation.symptom.SymptomViewModel
+import org.charged_proton.secondopinion.telemetry.AppTelemetry
+import org.charged_proton.secondopinion.telemetry.NoOpAppTelemetry
+import org.charged_proton.secondopinion.telemetry.TelemetryEvent
 import org.charged_proton.secondopinion.ui.legal.LegalLinks
 import org.koin.androidx.compose.koinViewModel
 
@@ -44,6 +47,7 @@ fun RecordScreen(
     modifier: Modifier = Modifier,
     viewModel: SymptomViewModel = koinViewModel(),
     authViewModel: AuthViewModel = koinViewModel(),
+    telemetry: AppTelemetry = NoOpAppTelemetry,
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -52,7 +56,12 @@ fun RecordScreen(
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (granted) viewModel.onStartRecording() else viewModel.onPermissionDenied()
+        if (granted) {
+            telemetry.event(TelemetryEvent.RECORDING_STARTED)
+            viewModel.onStartRecording()
+        } else {
+            viewModel.onPermissionDenied()
+        }
     }
 
     fun hasAudioPermission(): Boolean =
@@ -84,7 +93,10 @@ fun RecordScreen(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            TextButton(onClick = authViewModel::onSignOut) {
+            TextButton(onClick = {
+                telemetry.setCollectionEnabled(false)
+                authViewModel.onSignOut()
+            }) {
                 Text(text = stringResource(R.string.sign_out))
             }
         }
@@ -94,6 +106,7 @@ fun RecordScreen(
         Button(
             onClick = {
                 if (uiState.isRecording) {
+                    telemetry.event(TelemetryEvent.RECORDING_STOPPED)
                     viewModel.onStopRecording()
                 } else {
                     viewModel.onRecordRequested()
@@ -120,7 +133,10 @@ fun RecordScreen(
         uiState.lastCaseId?.let { caseId ->
             Spacer(modifier = Modifier.height(24.dp))
             Button(
-                onClick = { onOpenAssessment(caseId) },
+                onClick = {
+                    telemetry.event(TelemetryEvent.ASSESSMENT_REQUESTED)
+                    onOpenAssessment(caseId)
+                },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(text = stringResource(R.string.get_assessment))
@@ -154,6 +170,7 @@ fun RecordScreen(
                     onClick = {
                         viewModel.onConsentConfirmed()
                         if (hasAudioPermission()) {
+                            telemetry.event(TelemetryEvent.RECORDING_STARTED)
                             viewModel.onStartRecording()
                         } else {
                             permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)

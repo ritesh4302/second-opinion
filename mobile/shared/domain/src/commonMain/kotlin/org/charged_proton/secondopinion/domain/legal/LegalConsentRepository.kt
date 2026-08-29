@@ -1,6 +1,6 @@
 package org.charged_proton.secondopinion.domain.legal
 
-const val CURRENT_LEGAL_VERSION = "2026-08-27"
+const val CURRENT_LEGAL_VERSION = "2026-08-27-telemetry-1"
 
 data class LegalAcceptance(
     val version: String,
