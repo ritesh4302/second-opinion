@@ -136,12 +136,14 @@ class SarvamAssessor:
             raise ProviderConfigurationError("SO_SARVAM_API_KEY is not set")
         self._client = SarvamAI(api_subscription_key=settings.sarvam_api_key)
         self.model_id = settings.sarvam_assessment_model
+        self._max_tokens = settings.sarvam_max_tokens
 
     def assess(self, case: CaseSummary) -> AssessmentResult:
-        # Sarvam chat models are reasoning models: keep effort low and leave
-        # generous headroom — reasoning tokens count against max_tokens, and
-        # realistic transcripts have been observed to use >6k tokens before
-        # `content` finishes (a truncated reply is unparseable JSON).
+        # Sarvam chat models can spend hidden reasoning tokens that count
+        # against max_tokens: keep effort low and leave generous headroom
+        # (a truncated reply is unparseable JSON). sarvam-105b needs >6k
+        # tokens on realistic transcripts; sarvam-105b-conversations caps
+        # max_tokens at 8192.
         response = self._client.chat.completions(
             model=self.model_id,
             messages=[
@@ -149,7 +151,7 @@ class SarvamAssessor:
                 {"role": "user", "content": _case_prompt(case)},
             ],
             temperature=0.2,
-            max_tokens=16384,
+            max_tokens=self._max_tokens,
             reasoning_effort="low",
         )
         data = parse_llm_json(response.choices[0].message.content or "")

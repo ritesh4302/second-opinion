@@ -1,5 +1,6 @@
 """Pipeline stages: speech (download, diarize+transcribe, persist segments),
-NLP (relevance filter + structured extraction), and assessment (triage output).
+NLP (combined relevance filter + structured extraction in one LLM call), and
+assessment (triage output).
 
 Dependencies are injected so tests run the stages with fakes; worker/main.py
 wires the real S3 storage, Sarvam transcriber/NLP/assessor, and Celery enqueue.
@@ -142,36 +143,33 @@ def run_nlp_stage(
             if not segments:
                 raise MissingTranscriptError("no transcript segments to filter")
 
+            # One combined LLM call covers both the filtering and extracting
+            # states (halves the stage's reasoning-model round-trips); the
+            # EXTRACTING status is skipped and FILTER_STAGE names any failure.
             lines = [TranscriptLine(s.segment_index, s.speaker_label, s.text) for s in segments]
-            relevance = nlp.weigh_relevance(lines)
-            weights = {r.index: r.relevance for r in relevance.segments}
+            analysis = nlp.analyze(lines)
+            weights = {r.index: r.relevance for r in analysis.segments}
             for segment in segments:
                 weight = weights.get(segment.segment_index)
                 segment.relevance_weight = weight
                 segment.discarded = weight is not None and weight < relevance_threshold
-            recording.status = RecordingStatus.EXTRACTING
-            session.commit()
 
-            stage = EXTRACT_STAGE
             kept = [s for s in segments if not s.discarded]
             if not kept:
-                # Better to extract from everything than to lose the recording.
                 logger.warning("all_segments_discarded", recording_id=recording_id)
-                kept = segments
-            extraction = nlp.extract("\n".join(s.text for s in kept))
 
             # Idempotent on retry: replace any extraction from a previous attempt.
             session.execute(delete(Extraction).where(Extraction.recording_id == rid))
             session.add(
                 Extraction(
                     recording_id=rid,
-                    symptoms={"items": extraction.symptoms},
-                    age=extraction.age,
-                    gender=extraction.gender,
-                    location=extraction.location,
-                    duration_days=extraction.duration_days,
-                    severity=extraction.severity,
-                    raw_llm_output={"relevance": relevance.raw, "extraction": extraction.raw},
+                    symptoms={"items": analysis.symptoms},
+                    age=analysis.age,
+                    gender=analysis.gender,
+                    location=analysis.location,
+                    duration_days=analysis.duration_days,
+                    severity=analysis.severity,
+                    raw_llm_output={"analysis": analysis.raw},
                 )
             )
             recording.status = RecordingStatus.ASSESSING

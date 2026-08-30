@@ -44,17 +44,24 @@ class Settings(BaseSettings):
     sarvam_api_key: str = ""
     sarvam_model: str = "saaras:v3"
     sarvam_job_timeout_s: int = 600
+    # Batch job status poll interval; the SDK default of 5 s adds up to ~5 s
+    # of fixed latency per recording (Sarvam only asks for >=5 ms between polls).
+    sarvam_poll_interval_s: int = 2
 
-    # NLP stage (worker): relevance filter + structured extraction.
+    # NLP stage (worker): combined relevance filter + structured extraction.
+    # sarvam-105b-conversations skips the heavy hidden-reasoning pass of
+    # sarvam-105b (~2x faster per call, benchmarked) but caps output at 8192
+    # tokens — keep sarvam_max_tokens <= 8192 with it (16384 for sarvam-105b).
     nlp_provider: str = "sarvam"  # "sarvam" | "fake"
-    sarvam_chat_model: str = "sarvam-105b"
+    sarvam_chat_model: str = "sarvam-105b-conversations"
+    sarvam_max_tokens: int = 8192
     relevance_threshold: float = 0.35  # segments below this weight are discarded
 
     # Assessment stage (worker): triage output. Interim answer to Q3 — a
     # general Sarvam chat model behind the Assessor port until a medical LLM
     # is benchmarked.
     assessment_provider: str = "sarvam"  # "sarvam" | "fake"
-    sarvam_assessment_model: str = "sarvam-105b"
+    sarvam_assessment_model: str = "sarvam-105b-conversations"
 
 
 @lru_cache

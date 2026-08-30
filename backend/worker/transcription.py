@@ -68,6 +68,7 @@ class SarvamTranscriber:
         self._client = SarvamAI(api_subscription_key=settings.sarvam_api_key)
         self._model = settings.sarvam_model
         self._timeout_s = settings.sarvam_job_timeout_s
+        self._poll_interval_s = settings.sarvam_poll_interval_s
 
     def transcribe(self, audio: bytes, filename: str, locale: str) -> list[Segment]:
         job = self._client.speech_to_text_job.create_job(
@@ -82,7 +83,7 @@ class SarvamTranscriber:
             if not job.upload_files(file_paths=[str(audio_path)]):
                 raise TranscriptionError("Sarvam batch upload failed")
             job.start()
-            job.wait_until_complete(timeout=self._timeout_s)
+            job.wait_until_complete(poll_interval=self._poll_interval_s, timeout=self._timeout_s)
 
             results = job.get_file_results()
             if results.get("failed") or not results.get("successful"):

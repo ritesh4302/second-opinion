@@ -99,6 +99,10 @@ UPLOADED → QUEUED → DIARIZING → TRANSCRIBING → FILTERING → EXTRACTING 
                          DEAD_LETTERED → operator replay from failed stage
 ```
 
+Note: since the NLP stage's relevance filter and extraction were merged into one LLM call,
+recordings pass from FILTERING directly to ASSESSING; the EXTRACTING status remains in the
+enum (and the app maps `filtering`/`extracting` to the same UI stage) but is no longer set.
+
 Rules:
 - State transitions are DB transactions — a job is never "in two states".
 - Each stage stores its output artifact (transcript JSON, filtered text, extraction JSON,
@@ -287,11 +291,11 @@ users).
 3. ~~Speech worker: pyannote + Sarvam integration~~ ✅ — Sarvam Saaras v3 Batch API bundles
    diarization with ASR (answers Q2), so single-vendor for the POC; pyannote deferred until
    real-audio quality says otherwise. ASR benchmarking still needs real pharmacy audio.
-4. ~~NLP worker: relevance filter + extraction with structured output~~ ✅ — two focused
-   sarvam-105b calls (relevance weighting, then extraction from kept segments; sarvam-m is
-   deprecated), prompted JSON + Pydantic validation; raw LLM replies stored in
-   `extractions.raw_llm_output` for audit
-5. ~~Assessment stage~~ ✅ — `Assessor` port with a general Sarvam chat model (sarvam-105b)
+4. ~~NLP worker: relevance filter + extraction with structured output~~ ✅ — one combined
+   Sarvam chat call (relevance weighting + extraction in a single pass, halving the stage's
+   LLM round-trips; sarvam-m is deprecated), prompted JSON + Pydantic validation; the raw
+   LLM reply is stored in `extractions.raw_llm_output` for audit
+5. ~~Assessment stage~~ ✅ — `Assessor` port with a general Sarvam chat model
    as the POC provider: condition hypotheses + confidence, red flags, medicine guidance
    (OTC preferred; prescription drugs labeled, see §11 note);
    `model_id` + `prompt_version` + raw reply persisted per assessment. Q3 (dedicated
@@ -321,7 +325,7 @@ Layout: `backend/` — uv project, Python 3.12, single package `app/` + `worker/
 | `backend/app/routers/` | `health` (healthz/readyz), `auth` (`/v1/auth/me`), `recordings` (consent-gated upload / status / assessment / DELETE erasure, owner-scoped), `assessments` (feedback, owner-scoped) |
 | `backend/worker/main.py` | Celery worker entrypoint; bound resilient stage tasks, dead-letter sink/operator replay, daily retention sweep, and per-task observability context |
 | `backend/worker/transcription.py` | `Transcriber` port; `SarvamTranscriber` (Batch API, `with_diarization=True`) + `FakeTranscriber` (dev/demo, `SO_SPEECH_PROVIDER=fake`) |
-| `backend/worker/nlp.py` | `NlpModel` port; `SarvamNlp` (sarvam-105b chat, prompted-JSON + Pydantic validation) + `FakeNlp` (`SO_NLP_PROVIDER=fake`); relevance + extraction prompts |
+| `backend/worker/nlp.py` | `NlpModel` port; `SarvamNlp` (Sarvam chat, prompted-JSON + Pydantic validation) + `FakeNlp` (`SO_NLP_PROVIDER=fake`); combined relevance+extraction prompt (one LLM call per recording) |
 | `backend/worker/assessment.py` | `Assessor` port; `SarvamAssessor` (triage prompt: conditions + confidence, red flags, medicine guidance with `prescription: true/false` per item for Schedule H/H1) + `FakeAssessor` (`SO_ASSESSMENT_PROVIDER=fake`); `PROMPT_VERSION` recorded per assessment |
 | `backend/worker/pipeline.py` | Idempotent speech, NLP, and assessment persistence; failures record their exact stage and sanitized type before task-level retry/DLQ handling |
 | `backend/worker/retry.py`, `task_resilience.py` | Transient/permanent classification, bounded exponential backoff, sanitized retry/dead-letter metadata, and Celery retry orchestration |
@@ -339,12 +343,16 @@ assessment stage → `assessments` row → status `completed`; idempotent re-upl
 
 Also smoke-tested against the **real Sarvam APIs** (`SO_SPEECH_PROVIDER=sarvam` /
 `SO_NLP_PROVIDER=sarvam` / `SO_ASSESSMENT_PROVIDER=sarvam` + `SO_SARVAM_API_KEY`; compose
-defaults to `fake`) with synthesized Hindi pharmacy audio. Saaras v3, sarvam-105b relevance,
-structured extraction, and assessment all completed with schema-valid responses. The assessment
-returned empty recommendation lists for this synthetic sample, so clinical output quality is not
-yet validated and remains part of the real-audio/model benchmark. Sarvam chat models are reasoning models —
-requests set `reasoning_effort="low"` and `max_tokens=4096`, or the budget is consumed
-before the reply. Requirement change: prescription (Schedule H/H1) medicines are no
+defaults to `fake`) with synthesized Hindi pharmacy audio. Saaras v3, the combined
+relevance+extraction call, and assessment all completed with schema-valid responses.
+Clinical output quality is not yet validated and remains part of the real-audio/model
+benchmark. Latency: chat calls default to `sarvam-105b-conversations` (`SO_SARVAM_CHAT_MODEL`
+/ `SO_SARVAM_ASSESSMENT_MODEL`), which skips sarvam-105b's hidden reasoning pass (~2x faster
+per call, benchmarked) but caps output at 8192 tokens — `SO_SARVAM_MAX_TOKENS` defaults to
+8192 (use 16384 if switching back to sarvam-105b, whose reasoning tokens count against the
+budget; a truncated reply is unparseable JSON). Requests keep `reasoning_effort="low"`, and
+the batch STT poll interval is `SO_SARVAM_POLL_INTERVAL_S` (default 2 s).
+Requirement change: prescription (Schedule H/H1) medicines are no
 longer blocked — guidance items carry a model-declared `prescription: true/false` flag
 that the app renders as a "prescription drug" label. Known gap: label correctness relies
 on the prompt (no code-side schedule lookup), so mislabels are possible until an

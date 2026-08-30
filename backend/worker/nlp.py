@@ -1,10 +1,12 @@
 """NLP stage port + providers.
 
-Two focused LLM calls per recording — relevance weighting (which speaker is
-the patient, which segments matter) and structured extraction — matching the
-`filtering` / `extracting` states (docs/BACKEND.md §2.2). The provider sits
-behind `NlpModel` so the vendor (sarvam-105b for the POC) can be swapped per
-benchmark results without touching pipeline orchestration.
+One combined LLM call per recording — relevance weighting (which speaker is
+the patient, which segments matter) and structured extraction in a single
+pass — covering the `filtering` / `extracting` states (docs/BACKEND.md §2.2).
+Merged to halve the stage's LLM round-trips (each call on a reasoning model
+pays a full thinking pass). The provider sits behind `NlpModel` so the vendor
+(sarvam-105b for the POC) can be swapped per benchmark results without
+touching pipeline orchestration.
 """
 
 import json
@@ -42,18 +44,11 @@ class SegmentRelevance(BaseModel):
         return min(max(value, 0.0), 1.0)
 
 
-class RelevanceResult(BaseModel):
+class NlpAnalysis(BaseModel):
+    """Relevance weights + structured extraction from one combined LLM call."""
+
     patient_speaker: str | None = None
     segments: list[SegmentRelevance]
-    raw: dict = Field(default_factory=dict)
-
-    @field_validator("patient_speaker", mode="before")
-    @classmethod
-    def _stringify(cls, value: object) -> str | None:
-        return None if value is None else str(value)
-
-
-class ExtractionResult(BaseModel):
     symptoms: list[str] = Field(default_factory=list)
     age: int | None = None
     gender: str | None = None
@@ -62,13 +57,16 @@ class ExtractionResult(BaseModel):
     severity: str | None = None
     raw: dict = Field(default_factory=dict)
 
+    @field_validator("patient_speaker", mode="before")
+    @classmethod
+    def _stringify(cls, value: object) -> str | None:
+        return None if value is None else str(value)
+
 
 class NlpModel(Protocol):
     """Port for the NLP stage; tests provide a stub."""
 
-    def weigh_relevance(self, lines: list[TranscriptLine]) -> RelevanceResult: ...
-
-    def extract(self, text: str) -> ExtractionResult: ...
+    def analyze(self, lines: list[TranscriptLine]) -> NlpAnalysis: ...
 
 
 def parse_llm_json(text: str) -> dict:
@@ -82,28 +80,26 @@ def parse_llm_json(text: str) -> dict:
         raise NlpError(f"LLM reply is not valid JSON: {exc}") from exc
 
 
-_RELEVANCE_SYSTEM = (
+_ANALYSIS_SYSTEM = (
     "You analyse a diarized pharmacy-counter conversation from India "
-    "(Hindi / Hinglish / English). Decide which speaker is the patient — the "
-    "person the medicines are for, or whoever describes the symptoms — and "
-    "rate each segment's relevance to the medical complaint: first-person "
-    "symptom descriptions high, pharmacist questions about the complaint "
-    "medium, greetings/prices/unrelated chatter low. Reply with JSON only:\n"
+    "(Hindi / Hinglish / English). Do both of these in one pass:\n"
+    "1. Decide which speaker is the patient — the person the medicines are "
+    "for, or whoever describes the symptoms — and rate each segment's "
+    "relevance to the medical complaint: first-person symptom descriptions "
+    "high, pharmacist questions about the complaint medium, greetings/"
+    "prices/unrelated chatter low.\n"
+    "2. Extract structured intake data from the medically relevant "
+    "segments.\n"
+    "Reply with JSON only:\n"
     '{"patient_speaker": "<label exactly as given, e.g. \\"0\\", or null>", '
-    '"segments": [{"index": <int>, "relevance": <0.0-1.0>}]}\n'
-    "Include every input index exactly once."
-)
-
-_EXTRACTION_SYSTEM = (
-    "You extract structured intake data from the relevant parts of a "
-    "pharmacy-counter transcript (Hindi / Hinglish / English). Reply with "
-    "JSON only:\n"
-    '{"symptoms": ["<short English phrases>"], "age": <int or null>, '
+    '"segments": [{"index": <int>, "relevance": <0.0-1.0>}], '
+    '"symptoms": ["<short English phrases>"], "age": <int or null>, '
     '"gender": "male" | "female" | "other" | null, '
     '"location": "<affected body part/area>" | null, '
     '"duration_days": <int or null>, '
     '"severity": "mild" | "moderate" | "severe" | null}\n'
-    "Use null for anything not stated in the transcript; never guess."
+    "Include every input index exactly once. Use null for anything not "
+    "stated in the transcript; never guess."
 )
 
 
@@ -118,12 +114,14 @@ class SarvamNlp:
             raise ProviderConfigurationError("SO_SARVAM_API_KEY is not set")
         self._client = SarvamAI(api_subscription_key=settings.sarvam_api_key)
         self._model = settings.sarvam_chat_model
+        self._max_tokens = settings.sarvam_max_tokens
 
     def _complete(self, system: str, user: str) -> dict:
-        # Sarvam chat models are reasoning models: keep effort low and leave
-        # generous headroom — reasoning tokens count against max_tokens, and
-        # realistic transcripts have been observed to use >6k tokens before
-        # `content` finishes (a truncated reply is unparseable JSON).
+        # Sarvam chat models can spend hidden reasoning tokens that count
+        # against max_tokens: keep effort low and leave generous headroom
+        # (a truncated reply is unparseable JSON). sarvam-105b needs >6k
+        # tokens on realistic transcripts; sarvam-105b-conversations caps
+        # max_tokens at 8192.
         response = self._client.chat.completions(
             model=self._model,
             messages=[
@@ -131,29 +129,20 @@ class SarvamNlp:
                 {"role": "user", "content": user},
             ],
             temperature=0.2,
-            max_tokens=16384,
+            max_tokens=self._max_tokens,
             reasoning_effort="low",
         )
         return parse_llm_json(response.choices[0].message.content or "")
 
-    def weigh_relevance(self, lines: list[TranscriptLine]) -> RelevanceResult:
+    def analyze(self, lines: list[TranscriptLine]) -> NlpAnalysis:
         user = "\n".join(
             f"{line.index} | speaker {line.speaker_label} | {line.text}" for line in lines
         )
-        data = self._complete(_RELEVANCE_SYSTEM, user)
+        data = self._complete(_ANALYSIS_SYSTEM, user)
         try:
-            result = RelevanceResult.model_validate(data)
+            result = NlpAnalysis.model_validate(data)
         except ValidationError as exc:
-            raise NlpError(f"relevance reply failed validation: {exc}") from exc
-        result.raw = data
-        return result
-
-    def extract(self, text: str) -> ExtractionResult:
-        data = self._complete(_EXTRACTION_SYSTEM, text)
-        try:
-            result = ExtractionResult.model_validate(data)
-        except ValidationError as exc:
-            raise NlpError(f"extraction reply failed validation: {exc}") from exc
+            raise NlpError(f"analysis reply failed validation: {exc}") from exc
         result.raw = data
         return result
 
@@ -161,9 +150,9 @@ class SarvamNlp:
 class FakeNlp:
     """Deterministic weights/extraction for dev/demo runs without an API key."""
 
-    def weigh_relevance(self, lines: list[TranscriptLine]) -> RelevanceResult:
-        logger.info("fake nlp: weighing %d segments", len(lines))
-        return RelevanceResult(
+    def analyze(self, lines: list[TranscriptLine]) -> NlpAnalysis:
+        logger.info("fake nlp: analyzing %d segments", len(lines))
+        return NlpAnalysis(
             patient_speaker="0",
             segments=[
                 SegmentRelevance(
@@ -172,11 +161,10 @@ class FakeNlp:
                 )
                 for line in lines
             ],
+            symptoms=["fever", "headache"],
+            duration_days=2,
+            severity="mild",
         )
-
-    def extract(self, text: str) -> ExtractionResult:
-        logger.info("fake nlp: returning canned extraction (%d chars)", len(text))
-        return ExtractionResult(symptoms=["fever", "headache"], duration_days=2, severity="mild")
 
 
 @lru_cache
