@@ -27,7 +27,8 @@ preserve stack frames but replace messages/causes before Crashlytics receives th
 ## 1. Architectural Direction (agreed)
 
 - **KMM (Kotlin Multiplatform)**: business logic, domain models, networking, and persistence
-  live in shared multiplatform modules. Android is the first platform; iOS is a future target.
+  live in shared multiplatform modules. Android is the first platform; the iOS app now
+  consumes the same shared modules (see `docs/IOS_APP.md`).
 - **Layer-per-module**: domain, data, and presentation are **separate Gradle modules**
   (`:shared:domain`, `:shared:data`, `:shared:presentation`) so layer boundaries are enforced
   by the build system, not just by convention.
@@ -44,7 +45,7 @@ preserve stack frames but replace messages/causes before Crashlytics receives th
 | Language | Kotlin 2.2.x | |
 | UI | Jetpack Compose + Material3 (BOM 2026.02.01) | Dynamic color on Android 12+ |
 | Architecture | MVVM + UDF | `StateFlow<UiState>` per screen |
-| Shared logic | Kotlin Multiplatform (`:shared:domain`, `:shared:data`, `:shared:presentation`) | Each with commonMain / androidMain (iosMain later) |
+| Shared logic | Kotlin Multiplatform (`:shared:domain`, `:shared:data`, `:shared:presentation`) | Each with commonMain / androidMain / iosMain (iOS actuals — `docs/IOS_APP.md` §3) |
 | Async | Kotlin Coroutines + Flow | Structured concurrency; no callbacks |
 | Networking | Ktor Client | Multiplatform; OkHttp engine on Android |
 | Serialization | kotlinx.serialization | JSON payloads to backend |
@@ -477,4 +478,5 @@ build classpath via the root `com.android.application` plugin, and re-requesting
 
 - `docs/PROJECT_DOCUMENTATION.md` — product context, decisions D1–D6, system architecture, roadmap
 - `docs/BACKEND.md` — backend architecture, API surface the app talks to (§3)
+- `docs/IOS_APP.md` — the iOS app built on the same shared modules
 - `docs/ideation.txt` — original rough sketch

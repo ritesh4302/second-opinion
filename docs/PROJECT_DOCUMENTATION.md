@@ -213,5 +213,6 @@ Android app wired to the backend pipeline end-to-end.
 ## 10. Related Files
 
 - `docs/ANDROID_APP.md` — Android app architecture, data flow, and developer/agent guide
+- `docs/IOS_APP.md` — iOS app architecture (SwiftUI over the same shared KMP modules)
 - `docs/BACKEND.md` — backend architecture, components, tech stack, and scaling practices
 - `docs/ideation.txt` — original rough sketch of the idea

@@ -236,10 +236,10 @@
 
 ### 6. Documentation
 
-- [ ] **Create `docs/IOS_APP.md`** — mirror `docs/ANDROID_APP.md`'s structure: tech-stack
+- [x] **Create `docs/IOS_APP.md`** — mirrors `docs/ANDROID_APP.md`'s structure: tech-stack
   table (SwiftUI, shared KMP modules, BGTaskScheduler, AVFoundation), module/file map,
-  upload + polling flow diagram, and the state-machine parity note: the backend now moves
+  upload + polling flow, and the state-machine parity note: the backend now moves
   FILTERING→ASSESSING directly (EXTRACTING remains in the enum but is never set —
   `docs/BACKEND.md` §2.2), and the shared stage mapping already folds both into one UI stage.
-- [ ] **Cross-link** — update `docs/ANDROID_APP.md` ("iosMain later" note), `docs/BACKEND.md`
-  §12 related-documents list, and this TODO as items complete.
+- [x] **Cross-link** — `docs/ANDROID_APP.md` (§1/§2 iosMain notes + §11 related documents)
+  and `docs/BACKEND.md` §12 now reference `docs/IOS_APP.md`.

@@ -362,3 +362,4 @@ evaluation set exists.
 
 - `docs/PROJECT_DOCUMENTATION.md` — product context, decisions D1–D6, vendor comparisons, roadmap
 - `docs/ANDROID_APP.md` — Android client architecture and upload flow (§5.2)
+- `docs/IOS_APP.md` — iOS client architecture (same shared upload/polling flow)
