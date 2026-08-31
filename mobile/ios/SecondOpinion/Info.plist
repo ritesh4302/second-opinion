@@ -5,6 +5,12 @@
 	<!-- Injected from the BACKEND_BASE_URL build setting; read by AppConfig. -->
 	<key>BackendBaseURL</key>
 	<string>$(BACKEND_BASE_URL)</string>
+	<!-- Consent gate (DPDP): telemetry collection is off until the pharmacist
+	     accepts the current legal version; TelemetryController then enables it. -->
+	<key>FirebaseAnalyticsCollectionEnabled</key>
+	<false/>
+	<key>FirebaseCrashlyticsCollectionEnabled</key>
+	<false/>
 	<!-- Debug talks to the docker-compose stack over plain http://127.0.0.1:8000. -->
 	<key>NSAppTransportSecurity</key>
 	<dict>

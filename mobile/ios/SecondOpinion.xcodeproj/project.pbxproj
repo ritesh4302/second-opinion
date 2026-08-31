@@ -6,6 +6,12 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		5A0000000000000000000060 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 5A0000000000000000000051 /* FirebaseAuth */; };
+		5A0000000000000000000061 /* FirebaseAnalytics in Frameworks */ = {isa = PBXBuildFile; productRef = 5A0000000000000000000052 /* FirebaseAnalytics */; };
+		5A0000000000000000000062 /* FirebaseCrashlytics in Frameworks */ = {isa = PBXBuildFile; productRef = 5A0000000000000000000053 /* FirebaseCrashlytics */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		5A0000000000000000000005 /* SecondOpinion.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SecondOpinion.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -40,6 +46,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5A0000000000000000000060 /* FirebaseAuth in Frameworks */,
+				5A0000000000000000000061 /* FirebaseAnalytics in Frameworks */,
+				5A0000000000000000000062 /* FirebaseCrashlytics in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -82,6 +91,11 @@
 				5A0000000000000000000002 /* SecondOpinion */,
 			);
 			name = SecondOpinion;
+			packageProductDependencies = (
+				5A0000000000000000000051 /* FirebaseAuth */,
+				5A0000000000000000000052 /* FirebaseAnalytics */,
+				5A0000000000000000000053 /* FirebaseCrashlytics */,
+			);
 			productName = SecondOpinion;
 			productReference = 5A0000000000000000000005 /* SecondOpinion.app */;
 			productType = "com.apple.product-type.application";
@@ -110,6 +124,9 @@
 			);
 			mainGroup = 5A0000000000000000000003;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				5A0000000000000000000050 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 5A0000000000000000000004 /* Products */;
 			projectDirPath = "";
@@ -269,6 +286,35 @@
 			name = Release;
 		};
 /* End XCBuildConfiguration section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		5A0000000000000000000050 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 12.18.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		5A0000000000000000000051 /* FirebaseAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 5A0000000000000000000050 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAuth;
+		};
+		5A0000000000000000000052 /* FirebaseAnalytics */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 5A0000000000000000000050 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAnalytics;
+		};
+		5A0000000000000000000053 /* FirebaseCrashlytics */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 5A0000000000000000000050 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCrashlytics;
+		};
+/* End XCSwiftPackageProductDependency section */
 
 /* Begin XCConfigurationList section */
 		5A0000000000000000000020 /* Build configuration list for PBXNativeTarget "SecondOpinion" */ = {

@@ -109,31 +109,34 @@
   backoff as Android's worker) until the BGTaskScheduler shim (§2) lands. Simulator build is
   green (`xcodebuild -project mobile/ios/SecondOpinion.xcodeproj -target SecondOpinion
   -sdk iphonesimulator -arch arm64 build`).
-- [ ] **Auth parity decision** — Firebase Auth iOS SDK with email/password + Google Sign-In
-  (GoogleSignIn SDK). Note: App Store review requires **Sign in with Apple** whenever
-  third-party sign-in is offered — either add it or ship email/password only for the
-  App-Distribution-only phase (no App Store review applies to Firebase App Distribution).
-  **Interim**: the iOS graph wires `FakeGoogleAuthClient` (pairs with the backend's
-  `SO_AUTH_PROVIDER=fake`), so the app is usable against the dev stack but not production
-  until the Firebase Auth adapter lands (§1).
+- [x] **Auth parity decision** — Firebase Auth iOS SDK with **email/password only** for the
+  App-Distribution-only phase: App Store review requires **Sign in with Apple** whenever
+  third-party sign-in is offered, so Google Sign-In (GoogleSignIn SDK) is deferred and the
+  login screen hides the Google button (`IosAppGraph.supportsGoogleSignIn`). The graph wires
+  `BridgedAuthClient` over the Swift `FirebaseAuthBridge` when FirebaseApp configures, and
+  falls back to `FakeGoogleAuthClient` (pairs with the backend's `SO_AUTH_PROVIDER=fake`)
+  otherwise — the same presence check Android uses.
 
 ### 1. Firebase integration (`pharmacy-opinion-3`)
 
-- [ ] **Register the iOS app** in the Firebase console (or
-  `firebase apps:create ios`) — bundle ID `org.charged-proton.secondopinion` (underscores are
-  invalid in bundle IDs, so the Android package `org.charged_proton.secondopinion` cannot be
-  reused verbatim); record the resulting `FIREBASE_APP_ID_IOS` (`1:352579493765:ios:…`).
-- [ ] **Download `GoogleService-Info.plist`** into `mobile/ios/` and gitignore it, matching the
-  treatment of `google-services.json`; CI receives it via a GitHub secret (base64) or keeps a
-  committed copy once the team confirms it is non-secret (same decision as Android, where the
-  file is committed).
-- [ ] **Add Firebase SDK via SPM** — FirebaseAuth, FirebaseAnalytics, FirebaseCrashlytics.
-- [ ] **Port the consent gate** — an iOS `AppTelemetry` equivalent of
+- [x] **Register the iOS app** in the Firebase console — bundle ID
+  `org.charged-proton.secondopinion` (underscores are invalid in bundle IDs, so the Android
+  package `org.charged_proton.secondopinion` cannot be reused verbatim);
+  `FIREBASE_APP_ID_IOS` is `1:352579493765:ios:2034da767b6af732226eec`.
+- [x] **`GoogleService-Info.plist`** committed at `mobile/ios/SecondOpinion/GoogleService-Info.plist`,
+  matching the Android decision to commit `google-services.json` as non-secret (no CI
+  base64 secret needed).
+- [x] **Add Firebase SDK via SPM** — firebase-ios-sdk 12.x (`upToNextMajorVersion` from
+  12.18.0) with FirebaseAuth, FirebaseAnalytics, FirebaseCrashlytics products;
+  `Package.resolved` pins the graph.
+- [x] **Port the consent gate** — `TelemetryController` (Swift) is the iOS counterpart of
   `mobile/app/.../telemetry/AppTelemetry.kt`: Analytics/Crashlytics collection **off by
   default** (`FirebaseAnalyticsCollectionEnabled` / `FirebaseCrashlyticsCollectionEnabled`
-  set to `NO` in Info.plist), enabled only after the current legal version is accepted
-  (`LegalConsentRepository` is already in `commonMain`), disabled on sign-out, with the same
-  fixed PHI-free event schema and sanitized exception reporting.
+  set to `NO` in Info.plist), enabled only after the current legal version is accepted and
+  disabled on sign-out (same gates as Android's AuthGate/LegalGate), with
+  `resetAnalyticsData()` + `deleteUnsentReports()` on disable. The PHI-free event schema
+  (screen views/events/sanitized non-fatals) is not yet emitted from iOS screens — port
+  alongside the BGTaskScheduler work in §2.
 - [ ] **Crashlytics dSYM upload** — add the run-script/Fastlane `upload_symbols` step so
   release archives symbolicate.
 

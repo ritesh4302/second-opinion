@@ -5,10 +5,12 @@ import SharedKit
 /// email/password form with a sign-up toggle and password reset.
 struct LoginView: View {
     @StateObject private var observer: ViewModelObserver<LoginViewModel, LoginUiState>
+    private let supportsGoogleSignIn: Bool
 
     init(graph: IosAppGraph) {
         let vm = graph.loginViewModel()
         _observer = StateObject(wrappedValue: ViewModelObserver(vm, vm.uiState))
+        supportsGoogleSignIn = graph.supportsGoogleSignIn
     }
 
     private var state: LoginUiState { observer.state }
@@ -22,19 +24,23 @@ struct LoginView: View {
             Text("Pharmacist sign-in")
                 .foregroundStyle(.secondary)
 
-            Button {
-                vm.onSignIn()
-            } label: {
-                Label("Continue with Google", systemImage: "person.crop.circle")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(state.isBusy)
+            // Hidden until the GoogleSignIn SDK is wired on iOS; Firebase
+            // email/password is the supported flow meanwhile.
+            if supportsGoogleSignIn {
+                Button {
+                    vm.onSignIn()
+                } label: {
+                    Label("Continue with Google", systemImage: "person.crop.circle")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(state.isBusy)
 
-            HStack {
-                VStack { Divider() }
-                Text("or").foregroundStyle(.secondary).font(.footnote)
-                VStack { Divider() }
+                HStack {
+                    VStack { Divider() }
+                    Text("or").foregroundStyle(.secondary).font(.footnote)
+                    VStack { Divider() }
+                }
             }
 
             TextField("Email", text: Binding(

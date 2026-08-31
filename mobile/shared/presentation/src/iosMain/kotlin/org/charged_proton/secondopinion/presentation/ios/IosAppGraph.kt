@@ -1,6 +1,8 @@
 package org.charged_proton.secondopinion.presentation.ios
 
+import org.charged_proton.secondopinion.data.auth.BridgedAuthClient
 import org.charged_proton.secondopinion.data.auth.FakeGoogleAuthClient
+import org.charged_proton.secondopinion.data.auth.IosAuthBridge
 import org.charged_proton.secondopinion.data.auth.UserDefaultsAuthTokenStore
 import org.charged_proton.secondopinion.data.legal.PersistentLegalConsentRepository
 import org.charged_proton.secondopinion.data.legal.UserDefaultsLegalAcceptanceStore
@@ -54,17 +56,22 @@ import platform.Foundation.timeIntervalSince1970
  * and pulls ViewModels from it; Koin is not used on iOS to keep the Swift
  * surface free of Koin types.
  *
- * Auth: the fake client for now (pairs with SO_AUTH_PROVIDER=fake); the
- * Firebase Auth iOS adapter replaces it in roadmap phase 1.
+ * Auth mirrors Android's FirebaseApp presence check: Swift passes its
+ * Firebase-backed [IosAuthBridge] when FirebaseApp configured successfully,
+ * otherwise null selects the fake client (pairs with SO_AUTH_PROVIDER=fake).
  */
-class IosAppGraph(backendBaseUrl: String) {
+class IosAppGraph(backendBaseUrl: String, authBridge: IosAuthBridge? = null) {
 
     // Platform + persistent local data
     private val audioRecorder = AvAudioRecorder()
     private val audioPlayer = AvAudioPlayerAudioPlayer()
     private val database = IosDatabaseFactory().create()
     private val tokenStore = UserDefaultsAuthTokenStore()
-    val authClient: AuthClient = FakeGoogleAuthClient(tokenStore)
+    val authClient: AuthClient =
+        authBridge?.let(::BridgedAuthClient) ?: FakeGoogleAuthClient(tokenStore)
+
+    /** Whether the interactive Google sign-in flow is available on this build. */
+    val supportsGoogleSignIn: Boolean = authBridge?.supportsGoogleSignIn ?: true
     private val currentOwnerId: () -> String? =
         { (authClient.authState.value as? AuthState.SignedIn)?.user?.uid }
     private val caseRepository = SqlDelightCaseRepository(database, currentOwnerId)

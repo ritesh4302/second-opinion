@@ -14,16 +14,24 @@ struct RootView: View {
     }
 
     var body: some View {
-        switch auth.state {
-        case is AuthStateUnknown:
-            ProgressView()
-        case let signedIn as AuthStateSignedIn:
-            SignedInView(graph: graph, user: signedIn.user) {
-                auth.vm.onSignOut()
+        Group {
+            switch auth.state {
+            case is AuthStateUnknown:
+                ProgressView()
+            case let signedIn as AuthStateSignedIn:
+                SignedInView(graph: graph, user: signedIn.user) {
+                    auth.vm.onSignOut()
+                }
+                .id(signedIn.user.uid)
+            default:
+                LoginView(graph: graph)
             }
-            .id(signedIn.user.uid)
-        default:
-            LoginView(graph: graph)
+        }
+        .onChange(of: auth.state is AuthStateSignedIn, initial: true) { _, isSignedIn in
+            // Mirrors Android's AuthGate: no telemetry while signed out.
+            if !isSignedIn {
+                TelemetryController.shared.setCollectionEnabled(false)
+            }
         }
     }
 }
@@ -44,10 +52,17 @@ private struct SignedInView: View {
     }
 
     var body: some View {
-        if legal.state.isAccepted {
-            MainTabView(graph: graph, onSignOut: onSignOut)
-        } else {
-            LegalConsentView(observer: legal)
+        Group {
+            if legal.state.isAccepted {
+                MainTabView(graph: graph, onSignOut: onSignOut)
+            } else {
+                LegalConsentView(observer: legal)
+            }
+        }
+        .onChange(of: legal.state.isAccepted, initial: true) { _, isAccepted in
+            // Mirrors Android's LegalGate: telemetry follows the acceptance
+            // of the current legal version.
+            TelemetryController.shared.setCollectionEnabled(isAccepted)
         }
     }
 }
