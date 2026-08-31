@@ -1,0 +1,12 @@
+# Match stores signing identities in a private, MATCH_PASSWORD-encrypted git
+# repo (docs/TODO.md iOS §3 "Code signing"). All values come from env so this
+# file stays credential-free:
+#   MATCH_GIT_URL       private certificates repo (read via MATCH_GIT_TOKEN
+#                       as the basic-auth password in CI)
+#   MATCH_PASSWORD      encryption passphrase (fastlane reads it implicitly)
+git_url(ENV.fetch("MATCH_GIT_URL", ""))
+storage_mode("git")
+
+type("adhoc") # App Distribution IPAs; tester UDIDs live in the profile
+app_identifier(["org.charged-proton.secondopinion"])
+readonly(true) # CI never mutates the certificates repo

@@ -24,5 +24,11 @@ captures/
 xcuserdata/
 DerivedData/
 
+# Fastlane (local bundler install + generated reports)
+ios/.bundle/
+ios/vendor/
+ios/fastlane/report.xml
+ios/fastlane/README.md
+
 # macOS
 .DS_Store

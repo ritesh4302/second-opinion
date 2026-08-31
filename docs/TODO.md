@@ -137,8 +137,10 @@
   `resetAnalyticsData()` + `deleteUnsentReports()` on disable. The PHI-free event schema
   (screen views/events/sanitized non-fatals) is not yet emitted from iOS screens — port
   alongside the BGTaskScheduler work in §2.
-- [ ] **Crashlytics dSYM upload** — add the run-script/Fastlane `upload_symbols` step so
-  release archives symbolicate.
+- [x] **Crashlytics dSYM upload** — the Fastlane `build_adhoc` lane runs
+  `upload_symbols_to_crashlytics` after `build_app`, using the `upload-symbols` binary from
+  the firebase-ios-sdk SPM checkout (no run-script phase, so Debug builds stay fast).
+  Unverified until the first signed archive exists (§3 signing).
 
 ### 2. Backend connectivity
 
@@ -171,49 +173,60 @@
 
 ### 3. CI/CD pipeline (`.github/workflows/ios.yml`)
 
-- [ ] **Fastlane setup** (`mobile/ios/fastlane/`) — lanes: `test` (unit tests via
-  `run_tests`/xcodebuild on a simulator, includes the shared-module Kotlin tests via Gradle),
-  `build_adhoc` (archive + export Ad Hoc/Development IPA for App Distribution), and later
-  `release` (App Store Connect upload).
-- [ ] **Code signing** — decide Match vs. manual:
-  - *Match (recommended)*: private certificates repo, `MATCH_PASSWORD` secret, a `match`
-    lane populating signing identities on the runner; Ad Hoc profile listing tester device
-    UDIDs (App Distribution needs testers' devices in the profile for Ad Hoc builds —
-    collect UDIDs via App Distribution's device registration flow).
-  - *Interim alternative*: a Development cert + profile exported as base64 secrets, imported
-    into a throwaway keychain in CI (`fastlane` `setup_ci` + manual import).
-- [ ] **Workflow structure** — mirror `mobile.yml`: trigger on `mobile/ios/**` +
-  `mobile/shared/**` paths; jobs `test` → `build` (on `macos-latest`; Xcode pinned via
-  `maxim-lobanov/setup-xcode`) → `distribute` (main pushes only). Cache Gradle (Kotlin/Native
-  compilation of the shared framework is the slow step) and SPM.
-- [ ] **Artifacts** — upload the IPA (retention 3 days, `if-no-files-found: error`) for the
-  distribute job, matching the Android APK artifact pattern.
+- [x] **Fastlane setup** (`mobile/ios/fastlane/`) — fastlane 2.230 pinned via
+  `mobile/ios/Gemfile{,.lock}`. Lanes: `test` (shared-module Kotlin host tests via Gradle,
+  then an unsigned Debug simulator compile — built by target with an explicit SDK because
+  gym's destination discovery is flaky when simulator runtimes lag Xcode; SYMROOT/OBJROOT
+  must be absolute or SPM resource bundles scatter) and `build_adhoc` (Match-signed Release
+  archive → Ad Hoc IPA → Crashlytics dSYM upload). `release` (App Store Connect) is
+  deferred until the App-Distribution-only phase ends. `test` verified green locally.
+- [x] **Code signing** — Match chosen (private certs repo, `storage_mode: git`,
+  `readonly` in CI): `fastlane/Matchfile` reads `MATCH_GIT_URL`/`MATCH_PASSWORD` from env
+  and `build_adhoc` passes `MATCH_GIT_TOKEN` as basic auth, so no credentials are
+  committed. Blocked on the Apple Developer Program membership (§5) before the certs repo
+  can be populated (`match adhoc`); tester UDIDs go into the Ad Hoc profile via
+  `match adhoc --force_for_new_devices`.
+- [x] **Workflow structure** — `.github/workflows/ios.yml` mirrors `mobile.yml`: triggers
+  on `mobile/ios/**` + `mobile/shared/**` (+ Gradle root files); jobs `test` →
+  `build-adhoc` → `distribute`. `test` runs on every push/PR (`macos-latest`, Xcode 16.4
+  via `maxim-lobanov/setup-xcode`, JDK 21 + Gradle caching for the Kotlin/Native framework
+  build, Ruby 3.3 with bundler cache, SPM checkouts cached on `Package.resolved`).
+  `build-adhoc`/`distribute` run on main pushes only and are gated on the repo variable
+  `IOS_SIGNING_READY=true` so the pipeline stays green until signing secrets exist.
+- [x] **Artifacts** — `build-adhoc` uploads the IPA (retention 3 days,
+  `if-no-files-found: error`); `distribute` downloads it, matching the Android APK pattern.
 
 ### 4. Firebase App Distribution
 
-- [ ] **Distribute job** — on `push` to `main`, download the IPA artifact, authenticate with
+- [x] **Distribute job** — implemented in `ios.yml` (gated with `build-adhoc` on
+  `IOS_SIGNING_READY`): downloads the IPA artifact, authenticates with
   `google-github-actions/auth@v3` against the existing WIF pool
   (`projects/352579493765/.../providers/github-oidc`, service account
-  `github-ftl-ci@pharmacy-opinion-3.iam.gserviceaccount.com` — WIF works identically on macOS
-  runners, and the Firebase CLI picks up the exported ADC), then
+  `github-ftl-ci@pharmacy-opinion-3.iam.gserviceaccount.com`), then
   `npx firebase-tools@14 appdistribution:distribute <ipa> --app "$FIREBASE_APP_ID_IOS"
   --groups internal-testers` with the commit message + SHA as release notes, exactly as the
-  Android `distribute` job does. No new service account or JSON key needed.
+  Android `distribute` job does. No new service account or JSON key needed. Unexercised
+  until signing lands.
 - [ ] **Tester onboarding** — testers install the App Distribution profile on iOS; for Ad Hoc
   builds, register their UDIDs in the Apple Developer portal and regenerate the profile
   (Match `match adhoc --force_for_new_devices`).
 
 ### 5. Secret management (GitHub Actions secrets)
 
-- [ ] Document and create in the repo settings (names, not values, tracked here):
+- [ ] Document and create in the repo settings (names, not values, tracked here). The
+  `build-adhoc` job consumes `APPLE_TEAM_ID`, `MATCH_GIT_URL`, `MATCH_GIT_TOKEN`, and
+  `MATCH_PASSWORD`; set the repo **variable** `IOS_SIGNING_READY=true` once they exist to
+  un-gate `build-adhoc` + `distribute`:
   | Secret | Purpose |
   |---|---|
+  | `APPLE_TEAM_ID` | Apple Developer team ID — Appfile/Match |
+  | `MATCH_GIT_URL` | Private certificates repo URL (Match over git) |
+  | `MATCH_PASSWORD` | Encryption passphrase for the Match certificates repo |
+  | `MATCH_GIT_TOKEN` | Read access to the private certificates repo |
   | `APP_STORE_CONNECT_KEY` | App Store Connect API key `.p8` (base64) — Fastlane auth for signing/profile management and future TestFlight |
   | `APP_STORE_CONNECT_KEY_ID` / `APP_STORE_CONNECT_ISSUER_ID` | Companion identifiers for the API key |
-  | `MATCH_PASSWORD` | Encryption passphrase for the Match certificates repo |
-  | `MATCH_GIT_TOKEN` | Read access to the private certificates repo (if Match over git) |
-  | `FIREBASE_APP_ID_IOS` | Plain env var candidate (not secret) — iOS app ID for App Distribution, mirroring the Android `FIREBASE_APP_ID` env in `mobile.yml` |
   | `IOS_GOOGLE_SERVICE_INFO_PLIST` | Base64 plist, only if the team opts not to commit it |
+  - `FIREBASE_APP_ID_IOS` is a plain env var in `ios.yml` (not secret), mirroring Android.
   - Note: **no Firebase token secret** — WIF covers App Distribution auth, matching Android.
 - [ ] **Apple Developer Program membership** — prerequisite for signing/distribution
   ($99/yr); decide the team account before the signing work starts.

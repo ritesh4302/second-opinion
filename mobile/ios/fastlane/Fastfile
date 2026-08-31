@@ -1,0 +1,86 @@
+# iOS lanes (docs/TODO.md iOS §3). Run from mobile/ios with `bundle exec
+# fastlane <lane>`. The `release` (App Store Connect) lane is deferred until
+# the App-Distribution-only phase ends.
+
+default_platform(:ios)
+
+PROJECT = "SecondOpinion.xcodeproj"
+SCHEME = "SecondOpinion"
+BUNDLE_ID = "org.charged-proton.secondopinion"
+OUTPUT_DIR = "build/fastlane"
+
+platform :ios do
+  desc "Shared-module Kotlin host tests + unsigned Debug simulator build"
+  lane :test do
+    # The KMP modules carry the unit-testable logic (ViewModels, queue,
+    # repositories); SwiftUI views have no XCTest target yet, so the Swift
+    # side is verified by compiling the app for the simulator.
+    gradle(
+      tasks: [
+        ":shared:domain:testAndroidHostTest",
+        ":shared:data:testAndroidHostTest",
+        ":shared:presentation:testAndroidHostTest",
+      ],
+      project_dir: "../", # mobile/ relative to mobile/ios
+    )
+    # Build by target with an explicit SDK rather than gym's scheme/destination
+    # resolution: destination discovery is flaky when the host's simulator
+    # runtimes lag Xcode, and an unsigned compile check needs no archive.
+    # SYMROOT/OBJROOT must be absolute — xcodebuild resolves relative paths
+    # per-package, scattering SPM resource bundles.
+    out = File.expand_path("../#{OUTPUT_DIR}", __dir__)
+    sh(
+      "xcodebuild -project ../#{PROJECT} -target #{SCHEME} " \
+      "-sdk iphonesimulator -arch arm64 -configuration Debug " \
+      "CODE_SIGNING_ALLOWED=NO SYMROOT=#{out}/sym OBJROOT=#{out}/obj " \
+      "-clonedSourcePackagesDirPath #{out}/SourcePackages build"
+    )
+  end
+
+  desc "Signed Ad Hoc IPA for Firebase App Distribution (+ dSYM upload)"
+  lane :build_adhoc do
+    # Throwaway keychain on CI runners; no-op locally.
+    setup_ci if ENV["CI"]
+
+    # Ad Hoc identities from the Match repo (MATCH_GIT_URL/MATCH_PASSWORD;
+    # MATCH_GIT_TOKEN grants read access in CI). The profile must list
+    # tester device UDIDs — refresh with
+    # `bundle exec fastlane match adhoc --force_for_new_devices`.
+    match(
+      type: "adhoc",
+      readonly: true,
+      git_basic_authorization: ENV["MATCH_GIT_TOKEN"] &&
+        Base64.strict_encode64("x-access-token:#{ENV["MATCH_GIT_TOKEN"]}"),
+    )
+
+    build_app(
+      project: PROJECT,
+      scheme: SCHEME,
+      configuration: "Release",
+      export_method: "ad-hoc",
+      output_directory: OUTPUT_DIR,
+      output_name: "SecondOpinion.ipa",
+      derived_data_path: "#{OUTPUT_DIR}/DerivedData",
+      cloned_source_packages_path: "#{OUTPUT_DIR}/SourcePackages",
+      xcargs: "CODE_SIGN_STYLE=Manual " \
+        "PROVISIONING_PROFILE_SPECIFIER='#{ENV["sigh_#{BUNDLE_ID}_adhoc_profile-name"]}'",
+    )
+
+    upload_crashlytics_symbols
+  end
+
+  desc "Upload dSYMs to Crashlytics so release archives symbolicate"
+  private_lane :upload_crashlytics_symbols do
+    # firebase-ios-sdk ships upload-symbols inside the SPM checkout that
+    # build_app just resolved into DerivedData.
+    upload_symbols = Dir.glob(
+      "../#{OUTPUT_DIR}/SourcePackages/checkouts/firebase-ios-sdk/Crashlytics/upload-symbols"
+    ).first
+    UI.user_error!("upload-symbols not found in SPM checkout") unless upload_symbols
+    upload_symbols_to_crashlytics(
+      binary_path: upload_symbols,
+      gsp_path: "SecondOpinion/GoogleService-Info.plist",
+      dsym_paths: Dir.glob("../#{OUTPUT_DIR}/*.app.dSYM.zip"),
+    )
+  end
+end

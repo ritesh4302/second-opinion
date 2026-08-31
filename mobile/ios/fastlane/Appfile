@@ -1,0 +1,6 @@
+# Bundle ID matches the Firebase iOS app registration (docs/TODO.md iOS §1).
+app_identifier("org.charged-proton.secondopinion")
+
+# Apple Developer team: set via env once the Program membership exists
+# (docs/TODO.md iOS §5); lanes that need signing fail fast without it.
+team_id(ENV["APPLE_TEAM_ID"]) if ENV["APPLE_TEAM_ID"]
