@@ -12,6 +12,10 @@ selectQueue:
 SELECT * FROM upload_queue
 WHERE case_id = ? AND owner_id = ?;
 
+selectPendingByOwner:
+SELECT * FROM upload_queue
+WHERE owner_id = ? AND state IN ('ENQUEUED', 'UPLOADING', 'PROCESSING', 'RETRY_WAIT');
+
 insertQueue:
 INSERT OR IGNORE INTO upload_queue(case_id, owner_id, state)
 VALUES (?, ?, 'ENQUEUED');

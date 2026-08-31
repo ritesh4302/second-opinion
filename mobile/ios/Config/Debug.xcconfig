@@ -1,0 +1,7 @@
+// Debug: docker-compose stack via the simulator's host loopback.
+// ($() splits the slashes so xcconfig does not treat // as a comment.)
+BACKEND_BASE_URL = http:/$()/127.0.0.1:8000
+
+// Debug plist adds the localhost-only ATS exception (NSAllowsLocalNetworking)
+// that the Release plist deliberately omits.
+INFOPLIST_FILE = SecondOpinion/Info-Debug.plist

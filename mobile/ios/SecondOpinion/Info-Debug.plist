@@ -2,9 +2,9 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- Release plist (selected by Config/Release.xcconfig): HTTPS only, no
-	     ATS exceptions. Debug uses Info-Debug.plist; keep the two in sync
-	     when adding keys. -->
+	<!-- Debug-only variant of Info.plist (selected by Config/Debug.xcconfig):
+	     identical except for the ATS local-networking exception below.
+	     Keep the two files in sync when adding keys. -->
 	<!-- Injected from the BACKEND_BASE_URL build setting; read by AppConfig. -->
 	<key>BackendBaseURL</key>
 	<string>$(BACKEND_BASE_URL)</string>
@@ -23,5 +23,11 @@
 	<array>
 		<string>processing</string>
 	</array>
+	<!-- Debug talks to the docker-compose stack over plain http://127.0.0.1:8000. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 </dict>
 </plist>

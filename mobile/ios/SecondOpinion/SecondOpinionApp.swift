@@ -16,6 +16,12 @@ struct SecondOpinionApp: App {
         return IosAppGraph(backendBaseUrl: AppConfig.backendBaseURL, authBridge: bridge)
     }()
 
+    init() {
+        // Registers the BGTask handler (must happen during launch) and
+        // re-drives any upload-queue work left over from a previous run.
+        UploadBackgroundScheduler.shared.start(graph: Self.graph)
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView(graph: Self.graph)

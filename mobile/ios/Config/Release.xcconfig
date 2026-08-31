@@ -1,0 +1,5 @@
+// Release/CI: the Cloud Run backend (HTTPS only, no ATS exceptions).
+// ($() splits the slashes so xcconfig does not treat // as a comment.)
+BACKEND_BASE_URL = https:/$()/so-api-7i4kw4366a-el.a.run.app
+
+INFOPLIST_FILE = SecondOpinion/Info.plist

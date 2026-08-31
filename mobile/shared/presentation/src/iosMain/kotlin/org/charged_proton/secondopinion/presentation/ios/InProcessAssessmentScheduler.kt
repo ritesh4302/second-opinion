@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import org.charged_proton.secondopinion.data.queue.AssessmentWorkScheduler
 import org.charged_proton.secondopinion.data.queue.QueueProcessResult
@@ -14,12 +15,12 @@ import org.charged_proton.secondopinion.domain.auth.AuthClient
 import org.charged_proton.secondopinion.domain.auth.AuthState
 
 /**
- * Foreground upload scheduler for iOS: runs the shared [UploadQueueProcessor]
- * immediately in-process with the same five bounded exponential-backoff
- * attempts as Android's AssessmentUploadWorker. Unlike WorkManager this does
- * not survive app termination — the BGTaskScheduler + background URLSession
- * shim is a follow-up (TODO.md §2); until then the durable queue re-drives
- * unfinished work on next launch via [resume].
+ * In-process upload scheduler for iOS: runs the shared [UploadQueueProcessor]
+ * with the same five bounded exponential-backoff attempts as Android's
+ * AssessmentUploadWorker. Unlike WorkManager the jobs die with the process —
+ * the durable queue re-drives unfinished work via IosAppGraph's
+ * resumePendingUploads, invoked at launch and from the BGProcessingTask
+ * (UploadBackgroundScheduler in Swift).
  */
 class InProcessAssessmentScheduler(
     private val processor: () -> UploadQueueProcessor,
@@ -36,6 +37,20 @@ class InProcessAssessmentScheduler(
 
     override fun cancel(caseId: String, ownerId: String) {
         jobs.remove(caseId)?.cancel()
+    }
+
+    /** Suspends until every scheduled upload job has finished. */
+    suspend fun awaitIdle() {
+        jobs.values.toList().joinAll()
+    }
+
+    /**
+     * Stops all in-flight jobs (BGProcessingTask expiration). The queue rows
+     * stay pending, so the next resume re-drives them.
+     */
+    fun cancelAll() {
+        jobs.values.forEach { it.cancel() }
+        jobs.clear()
     }
 
     private suspend fun run(caseId: String, ownerId: String) {

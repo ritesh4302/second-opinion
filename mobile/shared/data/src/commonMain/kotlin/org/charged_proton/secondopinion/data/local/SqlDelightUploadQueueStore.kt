@@ -37,6 +37,15 @@ class SqlDelightUploadQueueStore(
         return withContext(Dispatchers.Default) { query(caseId, ownerId) }
     }
 
+    override suspend fun pending(): List<UploadQueueEntry> {
+        val ownerId = currentOwnerId() ?: return emptyList()
+        return withContext(Dispatchers.Default) {
+            database.uploadQueueQueries
+                .selectPendingByOwner(ownerId, mapper = ::toEntry)
+                .executeAsList()
+        }
+    }
+
     override suspend fun update(
         caseId: String,
         state: UploadQueueState,

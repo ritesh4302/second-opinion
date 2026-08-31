@@ -27,6 +27,11 @@ internal class FakeUploadQueueStore : UploadQueueStore {
 
     override suspend fun get(caseId: String): UploadQueueEntry? = entries[caseId]?.value
 
+    override suspend fun pending(): List<UploadQueueEntry> =
+        entries.values.mapNotNull { it.value }.filter {
+            it.state != UploadQueueState.COMPLETED && it.state != UploadQueueState.FAILED
+        }
+
     override suspend fun update(
         caseId: String,
         state: UploadQueueState,

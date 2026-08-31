@@ -142,23 +142,29 @@
 
 ### 2. Backend connectivity
 
-- [ ] **Build-time backend URL** — an `.xcconfig`-driven `BACKEND_BASE_URL` (Debug:
-  `http://127.0.0.1:8000` for the compose stack via the simulator's host loopback; Release/CI:
-  `https://so-api-7i4kw4366a-el.a.run.app`), injected into the shared `BackendApi` the same way
-  the Gradle `-PbackendBaseUrl` property works on Android. Note ATS blocks cleartext by
-  default — add a Debug-only ATS exception for localhost rather than a global one.
-- [ ] **Upload queue parity (`AssessmentUploadWorker` equivalent)** — the queue state machine
-  and `UploadQueueProcessor` live in `commonMain`; iOS needs the scheduler shim:
-  `BGTaskScheduler` (`BGProcessingTaskRequest` with `requiresNetworkConnectivity`) triggering
-  the shared processor, plus a background `URLSession` (upload task with an on-disk multipart
-  body) so the `POST /v1/recordings` multipart upload (`id`, `duration_ms`, `locale`,
-  `consent`, `audio` as `.m4a`) survives app suspension. Keep the five bounded
-  exponential-backoff attempts; document that BGTaskScheduler timing is opportunistic
-  (iOS decides when queued work runs, unlike WorkManager's constraints).
-- [ ] **Status polling parity** — shared `BackendAssessmentRepository` already polls
-  `GET /v1/recordings/{id}` every 2 s (≤ 8 min) and maps `filtering`/`extracting` to one UI
-  stage, so the backend's FILTERING→ASSESSING skip (EXTRACTING no longer set) needs no iOS
-  work — verify the mapping once the iOS UI renders `PipelineStage`.
+- [x] **Build-time backend URL** — `mobile/ios/Config/{Debug,Release}.xcconfig` drive
+  `BACKEND_BASE_URL` (Debug: `http://127.0.0.1:8000` for the compose stack via the
+  simulator's host loopback; Release/CI: `https://so-api-7i4kw4366a-el.a.run.app`) as base
+  configurations on the target. The ATS localhost exception is Debug-only: Debug selects
+  `Info-Debug.plist` (adds `NSAllowsLocalNetworking`), Release uses `Info.plist` with no
+  ATS exceptions.
+- [x] **Upload queue parity (`AssessmentUploadWorker` equivalent)** — the queue state machine
+  and `UploadQueueProcessor` live in `commonMain`; Swift `UploadBackgroundScheduler`
+  registers a `BGProcessingTaskRequest` (`requiresNetworkConnectivity`) under
+  `org.charged-proton.secondopinion.upload-queue` and drives the shared processor through
+  `IosAppGraph.resumePendingUploads`/`hasPendingUploads`/`cancelPendingUploads` (backed by
+  a new `UploadQueueStore.pending()` query). Pending rows are re-driven at launch and on
+  foregrounding; backgrounding with pending work submits a BG task, which re-submits itself
+  if work remains and cancels cleanly on expiration (rows stay pending). The five bounded
+  exponential-backoff attempts are unchanged. **Note**: BGTaskScheduler timing is
+  opportunistic — iOS decides when queued work runs, unlike WorkManager's constraints — so
+  launch/foreground resume is the primary drive. A background `URLSession` with an on-disk
+  multipart body (upload surviving suspension mid-transfer) remains a follow-up; today a
+  suspended upload retries from scratch on the next drive.
+- [x] **Status polling parity** — verified: shared `BackendDtos.kt` maps both `filtering`
+  and `extracting` to `PipelineStage.EXTRACTING` and the iOS `AssessmentView` switch
+  renders all five stages with a default fallback, so the backend's FILTERING→ASSESSING
+  skip needs no iOS work.
 - [ ] **End-to-end verification** — real recording on an iOS device/simulator against
   production, confirming upload → `stage_done` events (`.gcp/read-worker-logs.sh`) →
   assessment rendering, mirroring the Android verification.

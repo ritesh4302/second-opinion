@@ -14,12 +14,15 @@
 
 /* Begin PBXFileReference section */
 		5A0000000000000000000005 /* SecondOpinion.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SecondOpinion.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		5A0000000000000000000006 /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
+		5A0000000000000000000007 /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
 		5A0000000000000000000001 /* Exceptions for "SecondOpinion" folder */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				"Info-Debug.plist",
 				Info.plist,
 			);
 			target = 5A0000000000000000000010 /* SecondOpinion */;
@@ -59,8 +62,18 @@
 			isa = PBXGroup;
 			children = (
 				5A0000000000000000000002 /* SecondOpinion */,
+				5A0000000000000000000008 /* Config */,
 				5A0000000000000000000004 /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		5A0000000000000000000008 /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				5A0000000000000000000006 /* Debug.xcconfig */,
+				5A0000000000000000000007 /* Release.xcconfig */,
+			);
+			path = Config;
 			sourceTree = "<group>";
 		};
 		5A0000000000000000000004 /* Products */ = {
@@ -215,9 +228,9 @@
 		};
 		5A0000000000000000000042 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 5A0000000000000000000006 /* Debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
-				BACKEND_BASE_URL = "http://127.0.0.1:8000";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
@@ -226,7 +239,6 @@
 					"$(SRCROOT)/../shared/presentation/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)",
 				);
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = SecondOpinion/Info.plist;
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Second Opinion records the symptom conversation to prepare an assessment. Recording starts only after patient consent.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -251,9 +263,9 @@
 		};
 		5A0000000000000000000043 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 5A0000000000000000000007 /* Release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
-				BACKEND_BASE_URL = "https://so-api-7i4kw4366a-el.a.run.app";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
@@ -262,7 +274,6 @@
 					"$(SRCROOT)/../shared/presentation/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)",
 				);
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = SecondOpinion/Info.plist;
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Second Opinion records the symptom conversation to prepare an assessment. Recording starts only after patient consent.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

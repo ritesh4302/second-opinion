@@ -25,6 +25,9 @@ interface UploadQueueStore {
     suspend fun enqueue(caseId: String): UploadQueueEntry
     fun observe(caseId: String): Flow<UploadQueueEntry?>
     suspend fun get(caseId: String): UploadQueueEntry?
+
+    /** Entries not yet COMPLETED/FAILED for the current owner — work to re-drive after a restart. */
+    suspend fun pending(): List<UploadQueueEntry>
     suspend fun update(
         caseId: String,
         state: UploadQueueState,

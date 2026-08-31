@@ -1,5 +1,9 @@
 package org.charged_proton.secondopinion.presentation.ios
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import org.charged_proton.secondopinion.data.auth.BridgedAuthClient
 import org.charged_proton.secondopinion.data.auth.FakeGoogleAuthClient
 import org.charged_proton.secondopinion.data.auth.IosAuthBridge
@@ -105,6 +109,34 @@ class IosAppGraph(backendBaseUrl: String, authBridge: IosAuthBridge? = null) {
         queueStore,
         scheduler,
     )
+    private val queueScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    // Upload-queue hooks for Swift's UploadBackgroundScheduler (BGTaskScheduler):
+    // the queue is durable, so pending rows are re-driven at launch and when
+    // iOS grants a BGProcessingTask window.
+
+    /** Reports whether the current owner has queue entries still needing work. */
+    fun hasPendingUploads(onResult: (Boolean) -> Unit) {
+        queueScope.launch { onResult(queueStore.pending().isNotEmpty()) }
+    }
+
+    /**
+     * Re-enqueues every pending queue entry for the current owner and invokes
+     * [onDone] once all upload jobs settle (success, permanent failure, or
+     * retries exhausted for this run).
+     */
+    fun resumePendingUploads(onDone: () -> Unit) {
+        queueScope.launch {
+            queueStore.pending().forEach { scheduler.enqueue(it.caseId, it.ownerId) }
+            scheduler.awaitIdle()
+            onDone()
+        }
+    }
+
+    /** Stops in-flight upload jobs (BGProcessingTask expiration); rows stay pending. */
+    fun cancelPendingUploads() {
+        scheduler.cancelAll()
+    }
 
     // ViewModel factories (SwiftUI owns lifetimes; pair with clearViewModel)
     fun authViewModel() = AuthViewModel(
