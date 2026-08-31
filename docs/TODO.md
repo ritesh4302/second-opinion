@@ -96,13 +96,26 @@
   - `AuthTokenStore` / `LegalAcceptanceStore` — `UserDefaultsAuthTokenStore` /
     `UserDefaultsLegalAcceptanceStore` (NSUserDefaults); token store to migrate to
     Keychain before wider distribution.
-- [ ] **Create the Xcode project** (`mobile/ios/`) — SwiftUI screens mirroring
-  Record/Assessment/History/Login/Legal, driven by the shared `:shared:presentation`
-  ViewModels; Koin initialized from Swift with the iOS platform singletons.
+- [x] **Create the Xcode project** (`mobile/ios/`) — `SecondOpinion.xcodeproj` with a
+  filesystem-synchronized `SecondOpinion/` group; SwiftUI screens mirroring
+  Record/Assessment/History/Login/Legal driven by the shared ViewModels via a
+  `ViewModelObserver` + Kotlin `FlowWatcher` bridge. DI is a manual `IosAppGraph`
+  (in `shared/presentation/src/iosMain`) mirroring Koin's `appModule` — Koin itself is not
+  initialized on iOS, keeping Koin types out of the Swift surface. A run-script phase invokes
+  `./gradlew :shared:presentation:embedAndSignAppleFrameworkForXcode`; the target links
+  SharedKit statically plus `-lsqlite3` (SQLDelight native driver). `BACKEND_BASE_URL` is a
+  build setting (Debug: `http://127.0.0.1:8000`, Release: Cloud Run) surfaced via Info.plist.
+  Upload scheduling uses an interim in-process `InProcessAssessmentScheduler` (same 5-attempt
+  backoff as Android's worker) until the BGTaskScheduler shim (§2) lands. Simulator build is
+  green (`xcodebuild -project mobile/ios/SecondOpinion.xcodeproj -target SecondOpinion
+  -sdk iphonesimulator -arch arm64 build`).
 - [ ] **Auth parity decision** — Firebase Auth iOS SDK with email/password + Google Sign-In
   (GoogleSignIn SDK). Note: App Store review requires **Sign in with Apple** whenever
   third-party sign-in is offered — either add it or ship email/password only for the
   App-Distribution-only phase (no App Store review applies to Firebase App Distribution).
+  **Interim**: the iOS graph wires `FakeGoogleAuthClient` (pairs with the backend's
+  `SO_AUTH_PROVIDER=fake`), so the app is usable against the dev stack but not production
+  until the Firebase Auth adapter lands (§1).
 
 ### 1. Firebase integration (`pharmacy-opinion-3`)
 
