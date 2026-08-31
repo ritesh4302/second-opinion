@@ -188,8 +188,9 @@
   `match adhoc --force_for_new_devices`.
 - [x] **Workflow structure** — `.github/workflows/ios.yml` mirrors `mobile.yml`: triggers
   on `mobile/ios/**` + `mobile/shared/**` (+ Gradle root files); jobs `test` →
-  `build-adhoc` → `distribute`. `test` runs on every push/PR (`macos-latest`, Xcode 16.4
-  via `maxim-lobanov/setup-xcode`, JDK 21 + Gradle caching for the Kotlin/Native framework
+  `build-adhoc` → `distribute`. `test` runs on every push/PR (`macos-latest`,
+  `latest-stable` Xcode via `maxim-lobanov/setup-xcode` — the macos-26 image ships only
+  Xcode 26.x, so hard pins rot; JDK 21 + Gradle caching for the Kotlin/Native framework
   build, Ruby 3.3 with bundler cache, SPM checkouts cached on `Package.resolved`).
   `build-adhoc`/`distribute` run on main pushes only and are gated on the repo variable
   `IOS_SIGNING_READY=true` so the pipeline stays green until signing secrets exist.
