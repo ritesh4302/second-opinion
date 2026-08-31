@@ -1,8 +1,7 @@
 source "https://rubygems.org"
 
-gem "fastlane", "~> 2.228"
+# Local and CI both use Ruby 3.3 (see .ruby-version) — the macOS system
+# Ruby 2.6 cannot resolve this Gemfile (CFPropertyList >= 4 needs 3.2+).
+ruby "~> 3.3.0"
 
-# Locked explicitly: 3.0.9 requires ruby < 3.2 and 4.0.0 requires >= 3.2, so a
-# lockfile resolved on one Ruby breaks bundle install on the other; 3.0.8 is
-# the newest version installable everywhere.
-gem "CFPropertyList", "3.0.8"
+gem "fastlane", "~> 2.228"

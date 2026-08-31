@@ -173,8 +173,10 @@
 
 ### 3. CI/CD pipeline (`.github/workflows/ios.yml`)
 
-- [x] **Fastlane setup** (`mobile/ios/fastlane/`) — fastlane 2.230 pinned via
-  `mobile/ios/Gemfile{,.lock}`. Lanes: `test` (shared-module Kotlin host tests via Gradle,
+- [x] **Fastlane setup** (`mobile/ios/fastlane/`) — fastlane pinned via
+  `mobile/ios/Gemfile{,.lock}` on Ruby 3.3 (`.ruby-version`; local dev uses Homebrew
+  `ruby@3.3` since the macOS system Ruby 2.6 cannot resolve current fastlane deps).
+  Lanes: `test` (shared-module Kotlin host tests via Gradle,
   then an unsigned Debug simulator compile — built by target with an explicit SDK because
   gym's destination discovery is flaky when simulator runtimes lag Xcode; SYMROOT/OBJROOT
   must be absolute or SPM resource bundles scatter) and `build_adhoc` (Match-signed Release
