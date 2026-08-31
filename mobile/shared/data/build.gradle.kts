@@ -13,6 +13,9 @@ kotlin {
         withHostTest {}
     }
 
+    iosArm64()
+    iosSimulatorArm64()
+
     sourceSets {
         commonMain.dependencies {
             api(project(":shared:domain"))
@@ -28,6 +31,10 @@ kotlin {
             implementation(libs.sherpa.onnx)
             implementation(libs.ktor.client.okhttp)
             implementation(libs.sqldelight.android.driver)
+        }
+        iosMain.dependencies {
+            implementation(libs.ktor.client.darwin)
+            implementation(libs.sqldelight.native.driver)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)

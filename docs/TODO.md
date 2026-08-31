@@ -78,23 +78,24 @@
 
 ### 0. KMP shared-code enablement (prerequisite)
 
-- [ ] **Add iOS targets to the shared modules** — `iosArm64()` + `iosSimulatorArm64()` in
-  `mobile/shared/{domain,data,presentation}/build.gradle.kts`, exported as a single umbrella
-  XCFramework (or via CocoaPods/SPM wrapper) that the Xcode project consumes.
-- [ ] **Provide `iosMain` implementations of the platform ports** (Android counterparts in
-  `shared/data/src/androidMain`):
-  - `AudioRecorder` — AVAudioEngine/AVAudioRecorder capturing 16 kHz mono, encoded to AAC
-    `.m4a` (AVAudioRecorder can write `.m4a` directly, replacing the Android
-    `MediaCodec` pipeline). VAD silence trimming: sherpa-onnx ships iOS xcframeworks, but
-    start without trimming (the recorder port already tolerates a no-trim fallback) and add
-    VAD as a follow-up.
-  - `AudioPlayer` — AVAudioPlayer.
-  - `AudioFileReader` / `AudioFileDeleter` — NSData/FileManager over the app container.
-  - SQLDelight driver — `NativeSqliteDriver` (`sqldelight-native-driver`) via an
-    `IosDatabaseFactory` mirroring `AndroidDatabaseFactory`.
-  - Ktor engine — `ktor-client-darwin` in `iosMain` (OkHttp stays Android-only).
-  - `AuthTokenStore` / `LegalAcceptanceStore` — Keychain (tokens) and NSUserDefaults
-    (per-user legal acceptance), mirroring the SharedPreferences stores.
+- [x] **Add iOS targets to the shared modules** — `iosArm64()` + `iosSimulatorArm64()` in
+  `mobile/shared/{domain,data,presentation}/build.gradle.kts`; `:shared:presentation`
+  builds the umbrella `SharedKit.xcframework` (exports domain + data) via
+  `./gradlew :shared:presentation:assembleSharedKitDebugXCFramework`.
+- [x] **Provide `iosMain` implementations of the platform ports** (Android counterparts in
+  `shared/data/src/androidMain`; iOS ones in `shared/data/src/iosMain`):
+  - `AudioRecorder` — `AvAudioRecorder` (AVAudioRecorder, 16 kHz mono AAC `.m4a` written
+    directly). VAD silence trimming not yet applied (the port tolerates untrimmed audio);
+    sherpa-onnx iOS xcframework integration is a follow-up.
+  - `AudioPlayer` — `AvAudioPlayerAudioPlayer` (AVAudioPlayer).
+  - `AudioFileReader` / `AudioFileDeleter` — `IosAudioFileReader` (NSData) /
+    `IosAudioFileDeleter` (NSFileManager).
+  - SQLDelight driver — `IosDatabaseFactory` on `NativeSqliteDriver`
+    (`sqldelight-native-driver`).
+  - Ktor engine — `createBackendApi` on `ktor-client-darwin` (OkHttp stays Android-only).
+  - `AuthTokenStore` / `LegalAcceptanceStore` — `UserDefaultsAuthTokenStore` /
+    `UserDefaultsLegalAcceptanceStore` (NSUserDefaults); token store to migrate to
+    Keychain before wider distribution.
 - [ ] **Create the Xcode project** (`mobile/ios/`) — SwiftUI screens mirroring
   Record/Assessment/History/Login/Legal, driven by the shared `:shared:presentation`
   ViewModels; Koin initialized from Swift with the iOS platform singletons.
